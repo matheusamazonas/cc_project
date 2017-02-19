@@ -1,0 +1,9 @@
+// Make a reversed copy of any list
+reverse ( list ) :: [ t ] -> [ t ] {
+	var accu = [];
+	while ( ! isEmpty ( list ) ) {
+		accu = list.hd : accu ;
+		list = list.tl;
+	}
+	return accu ;
+}

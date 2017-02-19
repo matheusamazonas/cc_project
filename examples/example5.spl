@@ -1,0 +1,8 @@
+// Computes the product of a list of integers
+product ( list ) :: [Int] -> Int {
+	if ( isEmpty ( list ) ) {
+		return 1;
+	} else {
+		return list.hd * product ( list.tl );
+	}
+}

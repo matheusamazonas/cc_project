@@ -1,0 +1,5 @@
+// A list based factorial function
+// Defined here to show that functions can be given in any order (unlike C)
+facL ( n ) :: Int -> Int {
+	return product (fromTo ( 1, n ) );
+}

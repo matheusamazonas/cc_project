@@ -1,0 +1,11 @@
+// square the odd numbers in a list and remove the even numbers
+squareOddNumbers ( list ) :: [Int] -> [Int] {
+	while ( ! isEmpty ( list ) && list.hd % 2 == 0) {
+		list = list.tl ;
+	}
+	if ( ! isEmpty (list) ) {
+		list.hd = list.hd * list.hd;
+		list.tl = squareOddNumbers( list.tl );
+	}
+	return list ;
+}

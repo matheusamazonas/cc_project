@@ -1,0 +1,2 @@
+// Absolute value, in a strange layout
+abs ( n ) :: Int -> Int { if (n < 0) return -n; else return n ; }
