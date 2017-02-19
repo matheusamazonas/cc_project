@@ -15,6 +15,7 @@
 >   | LogicalAnd
 >   | LogicalNot
 >   | ListConst
+>   | Mod
 >   deriving (Show)
 
 > data Type = 
@@ -43,6 +44,9 @@
 >    | TokenWhile
 >    | TokenVar
 >    | TokenReturn
+>    | TokenAttribution
+>    | TokenPeriod
+>    | TokenComma
 >    | TokenEOL
 >   deriving (Show)
 
@@ -63,10 +67,12 @@
 > lexer ('|':'|':xs) = TokenOp LogicalOr        : lexer xs
 > lexer (':':':':xs) = TokenFuncDecl            : lexer xs
 > lexer ('-':'>':xs) = TokenFuncType            : lexer xs
+> lexer ('=':xs)     = TokenAttribution         : lexer xs
 > lexer ('+':xs)     = TokenOp Plus             : lexer xs
 > lexer ('-':xs)     = TokenOp Minus            : lexer xs
 > lexer ('*':xs)     = TokenOp Times            : lexer xs
 > lexer ('/':xs)     = TokenOp Division         : lexer xs
+> lexer ('%':xs)     = TokenOp Mod         		: lexer xs
 > lexer ('(':xs)     = TokenOpenP               : lexer xs
 > lexer (')':xs)     = TokenCloseP              : lexer xs
 > lexer ('<':xs)     = TokenOp LessThan         : lexer xs
@@ -78,6 +84,8 @@
 > lexer ('}':xs)     = TokenCloseCurlyB         : lexer xs
 > lexer ('[':xs)     = TokenOpenSquareB         : lexer xs
 > lexer (']':xs)     = TokenCloseSquareB        : lexer xs
+> lexer ('.':xs)     = TokenPeriod              : lexer xs
+> lexer (',':xs)     = TokenComma               : lexer xs
 
 > lexText :: String -> [Token]
 > lexText s = lexId id : lexer rest
@@ -105,16 +113,14 @@
 >     (num, rest) = span isDigit s
 
 > lexSkipLine :: String -> [Token]
-> lexSkipLine [] = []
-> lexSkipLine (x:xs)
->   | x == '\n'      = lexer xs
->   | otherwise      = lexSkipLine xs
+> lexSkipLine []        = []
+> lexSkipLine ('\n':xs) = lexer xs
+> lexSkipLine (x:xs)    = lexSkipLine xs
 
 > lexSkipBlock :: String -> [Token]
-> lexSkipBlock [] = []
-> lexSkipBlock (x:xs)
->   | x == '*' && head xs == '/' = lexer (tail xs)
->   | otherwise                  = lexSkipBlock xs
+> lexSkipBlock []           = []
+> lexSkipBlock ('*':'/':ys) = lexer ys
+> lexSkipBlock (x:xs)       = lexSkipBlock xs
 
 > (|||) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 > f ||| g = \x -> (f x) || (g x)
