@@ -39,6 +39,7 @@
 >    | TokenOpenSquareB
 >    | TokenCloseSquareB
 >    | TokenIf
+>    | TokenElse
 >    | TokenWhile
 >    | TokenVar
 >    | TokenReturn
@@ -48,6 +49,8 @@
 
 > lexer :: String -> [Token]
 > lexer [] = []
+> lexer ('/':'/':xs) = lexSkipLine xs
+> lexer ('/':'*':xs) = lexSkipBlock xs
 > lexer (x:xs)
 >   | isSpace x = lexer xs 
 >   | isAlpha x = lexText (x:xs)
@@ -88,8 +91,9 @@
 >   | s == "Char"    = TokenType CharType
 >   | s == "Void"    = TokenType VoidType
 >   | s == "True"    = TokenBool True
->   | s == "False"    = TokenBool False
+>   | s == "False"   = TokenBool False
 >   | s == "if"      = TokenIf
+>   | s == "else"    = TokenElse
 >   | s == "while"   = TokenWhile
 >   | s == "var"     = TokenVar
 >   | s == "return"  = TokenReturn
@@ -100,6 +104,17 @@
 >   where
 >     (num, rest) = span isDigit s
 
+> lexSkipLine :: String -> [Token]
+> lexSkipLine [] = []
+> lexSkipLine (x:xs)
+>   | x == '\n'      = lexer xs
+>   | otherwise      = lexSkipLine xs
+
+> lexSkipBlock :: String -> [Token]
+> lexSkipBlock [] = []
+> lexSkipBlock (x:xs)
+>   | x == '*' && head xs == '/' = lexer (tail xs)
+>   | otherwise                  = lexSkipBlock xs
 
 > (|||) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 > f ||| g = \x -> (f x) || (g x)
