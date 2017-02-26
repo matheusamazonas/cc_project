@@ -1,3 +1,5 @@
+> module Lexer ( Token(..), Operation(..), BasicType(..), lexer ) where
+
 > import Data.Char
 
 > data Operation = 
@@ -18,11 +20,10 @@
 >   | Mod
 >   deriving (Show)
 
-> data Type = 
+> data BasicType = 
 >      IntType
 >    | BoolType
 >    | CharType
->    | VoidType
 >   deriving (Show)
 
 > data Token =
@@ -32,7 +33,8 @@
 >    | TokenOp Operation
 >    | TokenFuncDecl
 >    | TokenFuncType
->    | TokenType Type
+>    | TokenType BasicType
+>    | TokenVoidType
 >    | TokenOpenP
 >    | TokenCloseP
 >    | TokenOpenCurlyB
@@ -97,7 +99,7 @@
 >   | s == "Int"     = TokenType IntType
 >   | s == "Bool"    = TokenType BoolType
 >   | s == "Char"    = TokenType CharType
->   | s == "Void"    = TokenType VoidType
+>   | s == "Void"    = TokenVoidType
 >   | s == "True"    = TokenBool True
 >   | s == "False"   = TokenBool False
 >   | s == "if"      = TokenIf
