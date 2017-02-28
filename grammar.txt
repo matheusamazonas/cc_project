@@ -1,0 +1,78 @@
+SPL = Decl+
+Decl = VarDecl | FunDecl
+VarDecl = ('var' | Type) id '=' Exp ';'
+FunDecl = id '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
+RetType = Type | 'Void'
+FunType = [ FTypes ] '->' RetType
+FTypes = Type [ FTypes ]
+Type = BasicType
+	| ’(’ Type ’,’ Type ’)’ 
+	| ’[’ Type ’]’
+	| id
+BasicType = 'Int' | 'Bool' | 'Char'
+FArgs = id [ ',' FArgs ]
+Stmt = 'if' '(' Exp ')' '{' Stmt* '}' [ 'else' '{' Stmt* '}' ]
+	| 'while' '(' Exp ')' '{' Stmt* '}'
+	| id Field '=' Exp ';'
+	| FunCall ';'
+	| 'return' [ Exp ] ';'
+Exp = Exp1 [ '||' Exp ]
+Epx1 = Exp2 [ '&&' Exp1 ]
+Exp2 = Exp3 [ ('==' | '!=' | '<' | '<=' | '>' | '>=') Exp2 ]
+Exp3 = Exp4 [  ':' Exp3 ]
+Exp4 = Exp5 [ (('+' | '-') Exp5)* ]
+Exp5 = Exp6 [ (('*' | '/' | '%') Exp6)* ]
+Exp6 = [ ('!' | '-')* ] Exp7
+Exp7 = '(' Exp [ ',' Exp ] ')' | idField | int | char | 'False' | 'True' | '[]' | FunCall
+FunCall = id '(' [ ActArgs ] ')'
+ActArgs = Exp [ ',' ActArgs ]
+Field = [ '.' ('hd' | 'tl' | 'fst' | 'snd') Field ]
+int = [ '-' ] digit+
+id = alpha ( '_' | alphaNum )*
+
+
+
+
+
+
+
+Original grammar:
+
+SPL ::= Decl+
+Decl ::= VarDecl | FunDecl
+VarDecl ::= ('var' | Type) id '=' Exp ';'
+FunDecl ::= id '(' [ FArgs] ')' [ '∷' funType ] '{' VarCle* Stmt+ '}'
+RetType ::= Type | 'Void'
+FunType ::= [ FTypes ] '→' RetType
+FTypes ::= Type [FTypes]
+Type ::= BasicType
+	| ’(’ Type ’,’ Type ’)’ 
+	| ’[’ Type ’]’
+	| id
+BasicType ::= 'Int'
+	| 'Bool'
+	| 'Char'
+FArgs ::= [FArgs ','] id
+Stmt ::= 'if' '(' Exp ')' '{' Stmt* '}' [ 'else' '{' Stmt* '}' ]
+	| 'while' '(' Exp ')' '{' Stmt* '}'
+	| id Field '=' Exp ';'
+	| FunCall ';'
+	| 'return' [ Exp ] ';'
+Exp = id Field
+	| Exp Op2 Exp
+	| Op1 Exp
+	| int 
+	| char
+	| 'False' | 'True'
+	| '(' Exp ')'
+	| FunCall
+	| '[]'
+	| '(' Exp ',' Exp ')'
+Field ::= [  Field ( '.' 'hd' | '.' tl | '.' fst | '.' snd ) ]
+FunCall ::= id '(' [ ActArgs ] ')'
+ActArgs ::= Exp [ ',' Act Args ]
+Ops ::= '+' | '-' | '*' | '/' | '%' | '==' | '<' 
+	| '>' | '<=' | '>=' | '!=' | '&&' | '||' | ':'
+Op1 ::= '!' | '-'
+int ::= [ '-' ] digit+
+id ::= alpha ('_' | alphaNum)* 
