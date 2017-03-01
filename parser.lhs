@@ -137,7 +137,7 @@ versions do not (enabling look-ahead).
 
 Result mapping combinator
 Usage: parseA ->- mapresult
-Yields: mapresult(x) for every result x = (GramX, [RemainingTokens]) coming out of parseA
+Yields: tuples mapresult(x) for every result x = (GramX, [RemainingTokens]) coming out of parseA
 
 > (->-) :: (Parser t a) -> ((a, [t]) -> (b, [t])) -> (Parser t b)
 > parser ->- mapper = \toks -> [mapper tup | tup <- parser toks]
@@ -152,3 +152,12 @@ Note they still need to be combined into a higher-level grammatical structure (s
 > (-+-) :: (Parser t a) -> (Parser t b) -> (Parser t (a,b))
 > prsL -+- prsR = \toks -> [((xl,xr), remr) | (xl, reml) <- prsL toks, (xr, remr) <- prsR reml]
 > infixl 3 -+-
+
+Optional concatenation combinator: A = B [C]
+Usage: parseA = parseB -+?- parseC
+Yields: The same as for -+-, but the result is of type Either GramB (GramB,GramC).
+Note a mapper is needed afterwards to map Left GramB, or Right (GramB, GramC) into their desired form.
+
+(-+?-) :: (Parser t a) -> (Parser t b) -> (Parser t (Either a (a,b)))
+prsL -+?- prsR = (prsL ->- (\(x,y) -> (Left x, y))) ||| ((prsL -+- prsR) ->- (\(x,y) -> (Right x, y)))
+infixl 3 -+?-
