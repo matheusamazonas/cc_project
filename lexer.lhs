@@ -18,13 +18,13 @@
 >   | LogicalNot
 >   | ListConst
 >   | Mod
->   deriving (Show)
+>   deriving (Eq,Show)
 
 > data BasicType = 
 >      IntType
 >    | BoolType
 >    | CharType
->   deriving (Show)
+>   deriving (Eq,Show)
 
 > data Token =
 >      TokenId String
@@ -50,7 +50,7 @@
 >    | TokenPeriod
 >    | TokenComma
 >    | TokenEOL
->   deriving (Show)
+>   deriving (Eq,Show)
 
 
 > lexer :: String -> [Token]
