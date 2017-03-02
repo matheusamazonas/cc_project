@@ -1,6 +1,10 @@
-> module Lexer ( Token(..), Operation(..), BasicType(..), lexer ) where
+> module Lexer ( Token(..), Operation(..), BasicType(..), lexer , PosToken) where
 
 > import Data.Char
+> import Text.Parsec.Pos
+
+
+> type PosToken = (Token, SourcePos)
 
 > data Operation = 
 >     Minus 
@@ -18,13 +22,13 @@
 >   | LogicalNot
 >   | ListConst
 >   | Mod
->   deriving (Eq,Show)
+>   deriving (Show, Eq)
 
 > data BasicType = 
 >      IntType
 >    | BoolType
 >    | CharType
->   deriving (Eq,Show)
+>   deriving (Show, Eq)
 
 > data Token =
 >      TokenId String
@@ -50,79 +54,86 @@
 >    | TokenPeriod
 >    | TokenComma
 >    | TokenEOL
->   deriving (Eq,Show)
+>   deriving (Show, Eq)
 
 
-> lexer :: String -> [Token]
-> lexer [] = []
-> lexer ('/':'/':xs) = lexSkipLine xs
-> lexer ('/':'*':xs) = lexSkipBlock xs
-> lexer (x:xs)
->   | isSpace x = lexer xs 
->   | isAlpha x = lexText (x:xs)
->   | isDigit x = lexNum (x:xs)
-> lexer ('<':'=':xs) = TokenOp LessOrEqual      : lexer xs
-> lexer ('>':'=':xs) = TokenOp GreatherOrEqual  : lexer xs
-> lexer ('=':'=':xs) = TokenOp Equals           : lexer xs
-> lexer ('!':'=':xs) = TokenOp Different        : lexer xs
-> lexer ('&':'&':xs) = TokenOp LogicalAnd       : lexer xs
-> lexer ('|':'|':xs) = TokenOp LogicalOr        : lexer xs
-> lexer (':':':':xs) = TokenFuncDecl            : lexer xs
-> lexer ('-':'>':xs) = TokenFuncType            : lexer xs
-> lexer ('=':xs)     = TokenAttribution         : lexer xs
-> lexer ('+':xs)     = TokenOp Plus             : lexer xs
-> lexer ('-':xs)     = TokenOp Minus            : lexer xs
-> lexer ('*':xs)     = TokenOp Times            : lexer xs
-> lexer ('/':xs)     = TokenOp Division         : lexer xs
-> lexer ('%':xs)     = TokenOp Mod         		: lexer xs
-> lexer ('(':xs)     = TokenOpenP               : lexer xs
-> lexer (')':xs)     = TokenCloseP              : lexer xs
-> lexer ('<':xs)     = TokenOp LessThan         : lexer xs
-> lexer ('>':xs)     = TokenOp GreaterThan      : lexer xs
-> lexer ('!':xs)     = TokenOp LogicalNot       : lexer xs
-> lexer (':':xs)     = TokenOp ListConst        : lexer xs
-> lexer (';':xs)     = TokenEOL                 : lexer xs
-> lexer ('{':xs)     = TokenOpenCurlyB          : lexer xs
-> lexer ('}':xs)     = TokenCloseCurlyB         : lexer xs
-> lexer ('[':xs)     = TokenOpenSquareB         : lexer xs
-> lexer (']':xs)     = TokenCloseSquareB        : lexer xs
-> lexer ('.':xs)     = TokenPeriod              : lexer xs
-> lexer (',':xs)     = TokenComma               : lexer xs
+> incLine :: SourcePos -> SourcePos
+> incLine p =  setSourceColumn (incSourceLine p 1) 1
 
-> lexText :: String -> [Token]
-> lexText s = lexId id : lexer rest
+> lexer :: SourcePos -> String -> [PosToken]
+> lexer _ [] = []
+> lexer p ('/':'/':xs) = lexSkipLine (incSourceColumn p 2) xs
+> lexer p ('/':'*':xs) = lexSkipBlock (incSourceColumn p 2) xs
+> lexer p (x:xs)
+>   | x == '\n' = lexer (incLine p) xs 
+>   | x == '\t' = lexer (incSourceColumn p 4) xs 
+>   | isSpace x = lexer (incSourceColumn p 1) xs 
+>   | isAlpha x = lexText p (x:xs)
+>   | isDigit x = lexNum p (x:xs)
+> lexer p ('<':'=':xs) = (TokenOp LessOrEqual, p)      : lexer (incSourceColumn p 2) xs
+> lexer p ('>':'=':xs) = (TokenOp GreatherOrEqual, p)  : lexer (incSourceColumn p 2) xs
+> lexer p ('=':'=':xs) = (TokenOp Equals, p)           : lexer (incSourceColumn p 2) xs
+> lexer p ('!':'=':xs) = (TokenOp Different, p)        : lexer (incSourceColumn p 2) xs
+> lexer p ('&':'&':xs) = (TokenOp LogicalAnd, p)       : lexer (incSourceColumn p 2) xs
+> lexer p ('|':'|':xs) = (TokenOp LogicalOr, p)        : lexer (incSourceColumn p 2) xs
+> lexer p (':':':':xs) = (TokenFuncDecl, p)            : lexer (incSourceColumn p 2) xs
+> lexer p ('-':'>':xs) = (TokenFuncType, p)            : lexer (incSourceColumn p 2) xs
+> lexer p ('=':xs)     = (TokenAttribution, p)         : lexer (incSourceColumn p 1) xs
+> lexer p ('+':xs)     = (TokenOp Plus, p)             : lexer (incSourceColumn p 1) xs
+> lexer p ('-':xs)     = (TokenOp Minus, p)            : lexer (incSourceColumn p 1) xs
+> lexer p ('*':xs)     = (TokenOp Times, p)            : lexer (incSourceColumn p 1) xs
+> lexer p ('/':xs)     = (TokenOp Division, p)         : lexer (incSourceColumn p 1) xs
+> lexer p ('%':xs)     = (TokenOp Mod, p)              : lexer (incSourceColumn p 1) xs
+> lexer p ('(':xs)     = (TokenOpenP, p)               : lexer (incSourceColumn p 1) xs
+> lexer p (')':xs)     = (TokenCloseP , p)             : lexer (incSourceColumn p 1) xs
+> lexer p ('<':xs)     = (TokenOp LessThan, p)         : lexer (incSourceColumn p 1) xs
+> lexer p ('>':xs)     = (TokenOp GreaterThan, p)      : lexer (incSourceColumn p 1) xs
+> lexer p ('!':xs)     = (TokenOp LogicalNot, p)       : lexer (incSourceColumn p 1) xs
+> lexer p (':':xs)     = (TokenOp ListConst, p)        : lexer (incSourceColumn p 1) xs
+> lexer p (';':xs)     = (TokenEOL, p)                 : lexer (incSourceColumn p 1) xs
+> lexer p ('{':xs)     = (TokenOpenCurlyB, p)          : lexer (incSourceColumn p 1) xs
+> lexer p ('}':xs)     = (TokenCloseCurlyB, p)         : lexer (incSourceColumn p 1) xs
+> lexer p ('[':xs)     = (TokenOpenSquareB , p)        : lexer (incSourceColumn p 1) xs
+> lexer p (']':xs)     = (TokenCloseSquareB, p)        : lexer (incSourceColumn p 1) xs
+> lexer p ('.':xs)     = (TokenPeriod, p)              : lexer (incSourceColumn p 1) xs
+> lexer p (',':xs)     = (TokenComma , p)              : lexer (incSourceColumn p 1) xs
+> lexer _ xs           = error $ "Lexer error. Can't lex: " ++ xs
+
+> lexText :: SourcePos -> String -> [PosToken]
+> lexText p s = lexId p id : lexer (incSourceColumn p (length id)) rest
 >   where
 >     (id, rest) = span (isAlphaNum ||| ((==) '_')) s
 
-> lexId :: String -> Token
-> lexId s
->   | s == "Int"     = TokenType IntType
->   | s == "Bool"    = TokenType BoolType
->   | s == "Char"    = TokenType CharType
->   | s == "Void"    = TokenVoidType
->   | s == "True"    = TokenBool True
->   | s == "False"   = TokenBool False
->   | s == "if"      = TokenIf
->   | s == "else"    = TokenElse
->   | s == "while"   = TokenWhile
->   | s == "var"     = TokenVar
->   | s == "return"  = TokenReturn
->   | otherwise      = TokenId s
+> lexId :: SourcePos -> String -> PosToken
+> lexId p s
+>   | s == "Int"     = (TokenType IntType, p)
+>   | s == "Bool"    = (TokenType BoolType, p)
+>   | s == "Char"    = (TokenType CharType, p)
+>   | s == "Void"    = (TokenVoidType, p)
+>   | s == "True"    = (TokenBool True, p)
+>   | s == "False"   = (TokenBool False, p)
+>   | s == "if"      = (TokenIf, p)
+>   | s == "else"    = (TokenElse, p)
+>   | s == "while"   = (TokenWhile, p)
+>   | s == "var"     = (TokenVar, p)
+>   | s == "return"  = (TokenReturn, p)
+>   | otherwise      = (TokenId s, p)
 
-> lexNum :: String -> [Token]
-> lexNum s = TokenNum (read num) : lexer rest
+> lexNum :: SourcePos -> String -> [PosToken]
+> lexNum p s = (TokenNum (read num), p) : lexer (incSourceColumn p (length num)) rest
 >   where
 >     (num, rest) = span isDigit s
 
-> lexSkipLine :: String -> [Token]
-> lexSkipLine []        = []
-> lexSkipLine ('\n':xs) = lexer xs
-> lexSkipLine (x:xs)    = lexSkipLine xs
+> lexSkipLine :: SourcePos -> String -> [PosToken]
+> lexSkipLine _ []        = []
+> lexSkipLine p ('\n':xs) = lexer (incLine p) xs
+> lexSkipLine p (x:xs)    = lexSkipLine (incSourceColumn p 1) xs
 
-> lexSkipBlock :: String -> [Token]
-> lexSkipBlock []           = []
-> lexSkipBlock ('*':'/':ys) = lexer ys
-> lexSkipBlock (x:xs)       = lexSkipBlock xs
+> lexSkipBlock :: SourcePos -> String -> [PosToken]
+> lexSkipBlock _ []           = []
+> lexSkipBlock p ('*':'/':ys) = lexer (incSourceColumn p 2) ys
+> lexSkipBlock p ('\n':xs)    = lexSkipBlock (incLine p) xs
+> lexSkipBlock p (x:xs)       = lexSkipBlock (incSourceColumn p 1) xs
 
 > (|||) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 > f ||| g = \x -> (f x) || (g x)

@@ -2,37 +2,41 @@ SPL = Decl+
 Decl = VarDecl | FunDecl
 VarDecl = ('var' | Type) id '=' Exp ';'
 FunDecl = id '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
-RetType = Type | 'Void'
-FunType = [ FTypes ] '->' RetType
-FTypes = Type [ FTypes ]
-Type = BasicType
+-RetType = Type | 'Void'
+-FunType = [ FTypes ] '->' RetType
+-FTypes = Type [ FTypes ]
+-Type = BasicType
 	| ’(’ Type ’,’ Type ’)’ 
 	| ’[’ Type ’]’
 	| id
-BasicType = 'Int' | 'Bool' | 'Char'
-FArgs = id [ ',' FArgs ]
-Stmt = 'if' '(' Exp ')' '{' Stmt* '}' [ 'else' '{' Stmt* '}' ]
+-BasicType = 'Int' | 'Bool' | 'Char'
+-FArgs = id [ ',' FArgs ]
+-Stmt = 'if' '(' Exp ')' '{' Stmt* '}' [ 'else' '{' Stmt* '}' ]
 	| 'while' '(' Exp ')' '{' Stmt* '}'
-	| id Field '=' Exp ';'
-	| FunCall ';'
+	| Stmt1
 	| 'return' [ Exp ] ';'
-Exp = Exp1 [ '||' Exp ]
-Epx1 = Exp2 [ '&&' Exp1 ]
-Exp2 = Exp3 [ ('==' | '!=' | '<' | '<=' | '>' | '>=') Exp2 ]
-Exp3 = Exp4 [  ':' Exp3 ]
-Exp4 = Exp5 [ (('+' | '-') Exp5)* ]
-Exp5 = Exp6 [ (('*' | '/' | '%') Exp6)* ]
-Exp6 = [ ('!' | '-')* ] Exp7
-Exp7 = '(' Exp [ ',' Exp ] ')' | idField | int | char | 'False' | 'True' | '[]' | FunCall
-FunCall = id '(' [ ActArgs ] ')'
-ActArgs = Exp [ ',' ActArgs ]
-Field = [ '.' ('hd' | 'tl' | 'fst' | 'snd') Field ]
-int = [ '-' ] digit+
-id = alpha ( '_' | alphaNum )*
+-Stmt1 = id (ArgList || AttribBody) ';'
+-AttribBody = '=' Exp
+-Exp = Exp1 [ '||' Exp ]
+-Epx1 = Exp2 [ '&&' Exp1 ]
+-Exp2 = Exp3 [ ('==' | '!=' | '<' | '<=' | '>' | '>=') Exp2 ]
+-Exp3 = Exp4 [  ':' Exp3 ]
+?Exp4 = Exp5 [ (('+' | '-') Exp5)* ]
+?Exp5 = Exp6 [ (('*' | '/' | '%') Exp6)* ]
+-Exp6 = [ ('!' | '-') ] Exp7
+?Exp7 = int | char | 'False' | 'True' | '[]' | Exp8 | Exp9
+-Exp8 = id [Field | ArgList]
+-Exp9 = '(' Exp [ ',' Exp ] ')'
+-ArgList = '(' [ ActArgs ] ')'
+-FunCall = id ArgList
+-ActArgs = Exp [ ',' ActArgs ]
+-Field = [ '.' ('hd' | 'tl' | 'fst' | 'snd') Field ]
+-int = [ '-' ] digit+
+-id = alpha ( '_' | alphaNum )* 
 
 
 
-
+Dangling else
 
 
 
@@ -76,3 +80,5 @@ Ops ::= '+' | '-' | '*' | '/' | '%' | '==' | '<'
 Op1 ::= '!' | '-'
 int ::= [ '-' ] digit+
 id ::= alpha ('_' | alphaNum)* 
+
+

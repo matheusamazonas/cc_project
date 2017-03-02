@@ -4,6 +4,7 @@
 > import Lexer
 > import System.IO
 > import System.Environment
+> import Text.Parsec.Pos
 
 > main = do
 >   args <- getArgs
@@ -13,4 +14,5 @@
 >   else do
 >     let fileName = head args
 >     content <- readFile fileName
->     putStrLn $ show $ lexer $ content
+>     let pos = newPos fileName 1 1
+>     putStrLn $ show $ lexer pos content
