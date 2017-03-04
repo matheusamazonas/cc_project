@@ -1,61 +1,16 @@
-> module Lexer ( Token(..), Operation(..), BasicType(..), lexer , PosToken) where
+> module Lexer (lexer) where
 
+> import Token
 > import Data.Char
 > import Text.Parsec.Pos
 
+> (|||) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
+> f ||| g = \x -> (f x) || (g x)
 
-> type PosToken = (Token, SourcePos)
-
-> data Operation = 
->     Minus 
->   | Plus 
->   | Times 
->   | Division 
->   | LessThan 
->   | LessOrEqual 
->   | GreaterThan 
->   | GreatherOrEqual
->   | Equals
->   | Different
->   | LogicalOr
->   | LogicalAnd
->   | LogicalNot
->   | ListConst
->   | Mod
->   deriving (Show, Eq)
-
-> data BasicType = 
->      IntType
->    | BoolType
->    | CharType
->   deriving (Show, Eq)
-
-> data Token =
->      TokenId String
->    | TokenNum Int
->    | TokenBool Bool
->    | TokenOp Operation
->    | TokenFuncDecl
->    | TokenFuncType
->    | TokenType BasicType
->    | TokenVoidType
->    | TokenOpenP
->    | TokenCloseP
->    | TokenOpenCurlyB
->    | TokenCloseCurlyB
->    | TokenOpenSquareB
->    | TokenCloseSquareB
->    | TokenIf
->    | TokenElse
->    | TokenWhile
->    | TokenVar
->    | TokenReturn
->    | TokenAttribution
->    | TokenPeriod
->    | TokenComma
->    | TokenEOL
->   deriving (Show, Eq)
-
+Increments the number of lines in a SourcePos. 
+Just using incSourceLine isn't enough because
+every time there's a new line, we must set the
+column to 1 as well.
 
 > incLine :: SourcePos -> SourcePos
 > incLine p =  setSourceColumn (incSourceLine p 1) 1
@@ -134,9 +89,6 @@
 > lexSkipBlock p ('*':'/':ys) = lexer (incSourceColumn p 2) ys
 > lexSkipBlock p ('\n':xs)    = lexSkipBlock (incLine p) xs
 > lexSkipBlock p (x:xs)       = lexSkipBlock (incSourceColumn p 1) xs
-
-> (|||) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
-> f ||| g = \x -> (f x) || (g x)
 
 
 

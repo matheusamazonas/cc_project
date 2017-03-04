@@ -1,7 +1,9 @@
-SPL = Decl+
-Decl = VarDecl | FunDecl
-VarDecl = ('var' | Type) id '=' Exp ';'
-FunDecl = id '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
+-SPL = Decl+
+-Decl = (Type Decl1) | ('var' VarDeclTail)
+-Decl1 = FunDeclTail | (id VarDeclTail)
+-VarDeclVar = 'var' VarDeclTail
+-VarDeclTail = id '=' Exp ';'
+-FunDeclTail = '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
 -RetType = Type | 'Void'
 -FunType = [ FTypes ] '->' RetType
 -FTypes = Type [ FTypes ]
@@ -16,7 +18,7 @@ FunDecl = id '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
 	| Stmt1
 	| 'return' [ Exp ] ';'
 -Stmt1 = id (ArgList || AttribBody) ';'
--AttribBody = '=' Exp
+-AttribBody = [Field] '=' Exp
 -Exp = Exp1 [ '||' Exp ]
 -Epx1 = Exp2 [ '&&' Exp1 ]
 -Exp2 = Exp3 [ ('==' | '!=' | '<' | '<=' | '>' | '>=') Exp2 ]
@@ -28,7 +30,6 @@ FunDecl = id '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
 -Exp8 = id [Field | ArgList]
 -Exp9 = '(' Exp [ ',' Exp ] ')'
 -ArgList = '(' [ ActArgs ] ')'
--FunCall = id ArgList
 -ActArgs = Exp [ ',' ActArgs ]
 -Field = [ '.' ('hd' | 'tl' | 'fst' | 'snd') Field ]
 -int = [ '-' ] digit+

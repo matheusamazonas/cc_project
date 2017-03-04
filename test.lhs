@@ -1,16 +1,24 @@
 > import Parser 
+> import Grammar
 > import Lexer (lexer)
 > import Text.Parsec.Combinator (eof)
 > import Text.Parsec.Pos (SourcePos, newPos)
 > import Text.ParserCombinators.Parsec.Prim (parse)
 > import Control.Monad (void)
 
+This parser is here because it's used just for test purposes
+
+> pFuncDecl :: MyParser GramFuncDecl
+> pFuncDecl = do
+>   i <- pId
+>   t <- pFuncDeclTail
+>   return (GramFuncDecl i t)
+
 > parseId       = parse (pId <* eof) "test"
 > parseRetType  = parse (pRetType <* eof) "test"
 > parseFunType  = parse (pFunType <* eof) "test"
 > parseFTypes   = parse (pFTypes <* eof) "test"
 > parseFArgs    = parse (pFArgs <* eof) "test"
-> parseFunCall  = parse (pFunCall <* eof) "test"
 > parseExpr8    = parse (pExpr8 <* eof) "test"
 > parseExpr7    = parse (pExpr7 <* eof) "test"
 > parseExpr6    = parse (pExpr6 <* eof) "test"
@@ -41,8 +49,6 @@
 >   void $ testFType
 >   putStrLn "------ FArgs ------"
 >   void $ testFArgs
->   putStrLn "------ FunCall ------"
->   void $ testFunCall
 >   putStrLn "------ Expr8 ------"
 >   void $ testExpr8
 >   putStrLn "------ Expr7 ------"
@@ -96,12 +102,6 @@
 > fArgsProgs = ["x", "x, y", "x, u, b", "x, g, t, we", "xdada, fsfs" ]
 > fArgsCases = map (lexer nP) fArgsProgs
 > testFArgs = putStrLn $ unlines $ map (show . parseFArgs) fArgsCases
-
-== FunCall
-
-> funCallProgs = ["call()", "call(x)", "call(4,7)", "lala(a,c,b,g,f)", "call(l)" ]
-> funCallCases = map (lexer nP) funCallProgs
-> testFunCall = putStrLn $ unlines $ map (show . parseFunCall) funCallCases
 
 == Expr8
 
@@ -190,7 +190,6 @@ Needs nesting:
 > returnCases = map (lexer nP) returnlProgs
 > testReturn = putStrLn $ unlines $ map (show . parseReturn) returnCases
 
-
 == FuncDecl
 
 > funcDecl0 = "facR (n) :: Int -> Int { return; }"
@@ -200,7 +199,6 @@ Needs nesting:
 > funcDeclProgs = [funcDecl0, funcDecl1, funcDecl2, funcDecl3]
 > funcDeclCases = map (lexer nP) funcDeclProgs
 > testFuncDecl = putStrLn $ unlines $ map (show . parseFunDecl) funcDeclCases
-
 
 == Example1
 
