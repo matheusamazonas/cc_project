@@ -123,7 +123,7 @@ This parser is here because it's used just for test purposes
 
 == Expr5
 
-> expr5Progs = ["5", "5 / 6", "9 * 1", "9 % 6", "True", "True * False", "True * 9", "a * 9", "a * b", "a * b" ]
+> expr5Progs = ["5", "5 / 6", "9 * 1", "9 % 6", "True", "True * False", "True * 9", "a * 9", "a * b", "a * b", "5 * 4 * 3 * 2", "1 / 2 / 3 / 4" ]
 > expr5Cases = map (lexer nP) expr5Progs
 > testExpr5 = putStrLn $ unlines $ map (show . parseExpr5) expr5Cases
 

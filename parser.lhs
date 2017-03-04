@@ -2,7 +2,7 @@
 
 > import Text.ParserCombinators.Parsec.Prim hiding (satisfy)
 > import Text.Parsec.Pos (SourcePos, newPos)
-> import Text.Parsec.Combinator (optional, optionMaybe, many1)
+> import Text.Parsec.Combinator (optional, optionMaybe, many1, chainl1)
 > import Control.Monad (void)
 > import Control.Applicative ((<$>), (<*>), (<*), (*>), (<$))
 > import Data.Maybe (maybeToList)
@@ -246,44 +246,32 @@ Grammar: Exp3 = Exp4 [  ':' Exp3 ]
 >       e2 <- pExpr3 
 >       return(op, e2)
 
-TODO: Change optional to many. Maybe using fmap (<$>)?
 Parser for binary operators + and -
 Grammar: Exp4 = Exp5 [ (('+' | '-') Exp5)* ]
 
 > pExpr4 :: MyParser GramExp
-> pExpr4 = do
->   e1 <- pExpr5
->   opt <- optionMaybe pOpt
->   case opt of
->     Nothing -> return (e1)
->     Just (TokenOp op, e2) -> return (GramBinary op e1 e2)
+> pExpr4 = chainl1 pExpr5 pOp
 >   where
 >     pPlus = isToken $ TokenOp Plus
 >     pMinus = isToken $ TokenOp Minus
->     pOpt = do
->       op <- pPlus <|> pMinus
->       e2 <- pExpr5 
->       return(op, e2)
+>     pOp = do
+>       p <- pPlus <|> pMinus
+>       case p of 
+>         TokenOp o -> return $ GramBinary o
 
-TODO: Change optional to many. Maybe using fmap (<$>)?
 Parser for binary operators *, / and %
 Grammar: Exp5 = Exp6 [ (('*' | '/' | '%') Exp6)* ]
 
 > pExpr5 :: MyParser GramExp
-> pExpr5 = do
->   e1 <- pExpr6
->   opt <- optionMaybe pOpt
->   case opt of
->     Nothing -> return (e1)
->     Just (TokenOp op, e2) -> return (GramBinary op e1 e2)
+> pExpr5 = chainl1 pExpr6 pOp
 >   where
 >     pTimes = isToken $ TokenOp Times
 >     pDivision = isToken $ TokenOp Division
 >     pMod = isToken $ TokenOp Mod
->     pOpt = do
->       op <- pTimes <|> pDivision <|> pMod
->       e2 <- pExpr6 
->       return(op, e2)
+>     pOp = do
+>       p <- pTimes <|> pDivision <|> pMod
+>       case p of
+>         TokenOp o -> return $ GramBinary o
 
 Parser for unary operators !(boolean not) and -(int negation)
 Grammar: Exp6 = [ ('!' | '-') ] Exp7
