@@ -302,7 +302,7 @@ Grammar: Exp6 = [ ('!' | '-') ] Exp7
 Grammar: Exp7 = int | char | 'False' | 'True' | '[]' | Exp8 | Exp9
 
 > pExpr7 :: MyParser GramExp
-> pExpr7 = pInt <|> pBool <|> pExpr8 <|> pExpr9
+> pExpr7 = pInt <|> pBool <|> pExpr8 <|> pExpr9 <|> pEmptyList
 
 This parser was created to apply left refactoring on Expr7, since
 2 rules contained "id" is a common prefix: (id [Field]) and FunCall.
@@ -338,6 +338,12 @@ Grammar: Exp9 = '(' Exp [ ',' Exp ] ')'
 >       void $ isToken TokenComma
 >       e2 <- pExpr
 >       return (e2)	
+
+> pEmptyList :: MyParser GramExp
+> pEmptyList = do
+>   void $ isToken TokenOpenSquareB
+>   void $ isToken TokenCloseSquareB
+>   return (GramEmptyList)
 
 Grammar: ActArgs = Exp [ ',' ActArgs ]
 

@@ -41,6 +41,7 @@
 >    | GramExpFunCall GramFunCall
 >    | GramExpId GramVar
 >    | GramExpTuple GramExp GramExp
+>    | GramEmptyList
 >   deriving (Show, Eq)
 
 > data GramArgList = GramArgList [GramActArgs]
