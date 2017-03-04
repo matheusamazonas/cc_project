@@ -52,5 +52,6 @@
 >    | TokenPeriod
 >    | TokenComma
 >    | TokenEOL
+>    | TokenChar Char
 >   deriving (Show, Eq)
 

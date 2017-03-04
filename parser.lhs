@@ -40,6 +40,7 @@ use == instead (or just pattern match, like in constField).
 > matchToken (TokenId _)   (TokenId _)   = True
 > matchToken (TokenNum _)  (TokenNum _)  = True
 > matchToken (TokenBool _) (TokenBool _) = True
+> matchToken (TokenChar _) (TokenChar _) = True
 > matchToken (TokenType _) (TokenType _) = True
 > matchToken t1 t2 = t1 == t2
 
@@ -49,6 +50,13 @@ Parses a Bool. Pretty straightforward.
 > pBool = do
 >   TokenBool b <- isToken (TokenBool True)
 >   return (GramBool b)
+
+Parses a Char. Pretty straightforward.
+
+> pChar :: MyParser GramExp
+> pChar = do
+>   TokenChar c <- isToken (TokenChar ' ')
+>   return (GramChar c)
 
 Parses an Int. Keep in mind that the - is optional.
 
@@ -290,7 +298,7 @@ Grammar: Exp6 = [ ('!' | '-') ] Exp7
 Grammar: Exp7 = int | char | 'False' | 'True' | '[]' | Exp8 | Exp9
 
 > pExpr7 :: MyParser GramExp
-> pExpr7 = pInt <|> pBool <|> pExpr8 <|> pExpr9 <|> pEmptyList
+> pExpr7 = pInt <|> pBool <|> pExpr8 <|> pExpr9 <|> pEmptyList <|> pChar
 
 This parser was created to apply left refactoring on Expr7, since
 2 rules contained "id" is a common prefix: (id [Field]) and FunCall.

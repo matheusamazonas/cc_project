@@ -37,6 +37,7 @@
 >      GramBinary Operation GramExp GramExp
 >    | GramUnary Operation GramExp 
 >    | GramBool Bool
+>    | GramChar Char
 >    | GramNum Int
 >    | GramExpFunCall GramFunCall
 >    | GramExpId GramVar
