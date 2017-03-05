@@ -6,7 +6,8 @@
 
 > type Gram = [GramDecl]
 
-> data GramVar = Var GramId [GramField]
+> data GramVar = 
+>      Var GramId [GramField]
 >   deriving (Show, Eq)
 
 > data GramFunType = 
@@ -45,14 +46,16 @@
 >    | GramEmptyList
 >   deriving (Show, Eq)
 
-> data GramArgList = GramArgList [GramActArgs]
+> data GramArgList = 
+>      GramArgList [GramActArgs]
 >   deriving (Show, Eq)
 
 > data GramFunCall = 
 >     GramFunCall GramId GramArgList
 >   deriving (Show, Eq)
 
-> data GramActArgs = GramActExpr GramExp [GramActArgs]
+> data GramActArgs = 
+>      GramActExpr GramExp [GramActArgs]
 >   deriving (Show, Eq)
 
 > data GramField = 
