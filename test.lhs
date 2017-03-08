@@ -204,8 +204,46 @@ Needs nesting:
 
 == Example1
 
-> exampl1 = "facR ( n ) :: Int -> Int {\nif ( n < 2 ) {\nreturn 1;\n} else {\nreturn n * facR ( n - 1 );\n}\n}"
-> exampl2 = "/*\nThree ways to implement the factorial function in SPL.\nFirst the recursive version.\n*/\nfacR ( n ) :: Int -> Int {\nif ( n < 2 ) {\nreturn 1;\n} else {\nreturn n * facR ( n - 1 );\n}\n}"
-> examples = [exampl1, exampl2]
-> exampl1Case = map (lexer nP) examples
-> testExample1 = putStrLn $ unlines $ map (show . parseSPL) exampl1Case
+> example1 = "facR ( n ) :: Int -> Int {\nif ( n < 2 ) {\nreturn 1;\n} else {\nreturn n * facR ( n - 1 );\n}\n}"
+> example2 = "// The iterative version of the factorial function\nfacI ( n ) :: Int -> Int {\nvar r = 1;\nwhile ( n > 1 ) {\nr = r * n;\nn = n - 1;\n}\nreturn r;\n}"
+> example3 = "/// A main function to check the results\n// It takes no arguments, so the type looks like this:\nmain ( ) :: -> Void {\nvar n = 0;\nvar facN = 1;\nvar ok = True;\n	\nwhile ( n < 20 ) {\nfacN = facR ( n );\nif ( facN != facI ( n ) || facN != facL ( n )) {\nprint ( n : facN : facI ( n ) : facL ( n ) : [] );\nok = False;\n}\nn = n + 1;\n}\nprint ( ok );\n}"
+> example4 = "// A list based factorial function\n// Defined here to show that functions can be given in any order (unlike C)\nfacL ( n ) :: Int -> Int {\nreturn product (fromTo ( 1, n ) );\n}"
+> example5 = "// Computes the product of a list of integers\nproduct ( list ) :: [Int] -> Int {\n	if ( isEmpty ( list ) ) {\n		return 1;\n	} else {\n		return list.hd * product ( list.tl );\n	}\n}"
+> example6 = "// Generates a list of integers from the first to the last argument\nfromTo ( from, to ) :: Int Int -> [ Int ] {\n	if ( from <= to ) {\n		return from : fromTo ( from + 1, to );\n	} else {\n		return [] ;\n	}\n}"
+> example7 = "// Make a reversed copy of any list\nreverse ( list ) :: [ t ] -> [ t ] {\n	var accu = [];\n	while ( ! isEmpty ( list ) ) {\n		accu = list.hd : accu ;\n		list = list.tl;\n	}\n	return accu ;\n}"
+> example8 = "// Absolute value, in a strange layout\nabs ( n ) :: Int -> Int { if (n < 0) return -n; else return n ; }"
+> example9 = "// make a copy of a tuple with swapped elements\nswapCopy ( pair ) :: (a, b) -> (b, a) {\n	return ( pair. snd, pair.fst );\n}"	
+> example10 = "// swap the elements in a tuple\nswap ( tuple ) :: (a, a) -> (a, a) {\n	var tmp = tuple.fst ;\n	tuple.fst = tuple.snd;\n	tuple.snd = tmp;\n	return tuple;\n}"	
+> example11 = "// list append\nappend ( l1 , l2 ) :: [t] [t] -> [t] {\n	if ( isEmpty ( l1 ) ) {\n		return l2 ;\n	} else {\n		l1.tl = append ( l1.tl, l2 );\n		return l1;\n	}\n}"
+> example12 = "// square the odd numbers in a list and remove the even numbers\nsquareOddNumbers ( list ) :: [Int] -> [Int] {\n	while ( ! isEmpty ( list ) && list.hd % 2 == 0) {\n		list = list.tl ;\n	}\n	if ( ! isEmpty (list) ) {\n		list.hd = list.hd * list.hd;\n		list.tl = squareOddNumbers( list.tl );\n	}\n	return list ;\n}"
+> examples = [example1, example2, example3, example4, example5, example6, example7, example8, example9, example10, example11, example12]
+> exampl1Case = lexer nP example1
+> testExample1 = putStrLn $ show $ parseSPL exampl1Case
+> exampl2Case = lexer nP example2
+> testExample2 = putStrLn $ show $ parseSPL exampl2Case
+> exampl3Case = lexer nP example3
+> testExample3 = putStrLn $ show $ parseSPL exampl3Case
+> exampl4Case = lexer nP example4
+> testExample4 = putStrLn $ show $ parseSPL exampl4Case
+> exampl5Case = lexer nP example5
+> testExample5 = putStrLn $ show $ parseSPL exampl5Case
+> exampl6Case = lexer nP example6
+> testExample6 = putStrLn $ show $ parseSPL exampl6Case
+> exampl7Case = lexer nP example7
+> testExample7 = putStrLn $ show $ parseSPL exampl7Case
+> exampl8Case = lexer nP example8
+> testExample8 = putStrLn $ show $ parseSPL exampl8Case
+> exampl9Case = lexer nP example9
+> testExample9 = putStrLn $ show $ parseSPL exampl9Case
+> exampl10Case = lexer nP example10
+> testExample10 = putStrLn $ show $ parseSPL exampl10Case
+> exampl11Case = lexer nP example11
+> testExample11 = putStrLn $ show $ parseSPL exampl11Case
+> exampl12Case = lexer nP example12
+> testExample12 = putStrLn $ show $ parseSPL exampl12Case
+
+
+Example8 doesn't follow the grammar
+
+
+

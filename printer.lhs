@@ -46,21 +46,21 @@
 > printDecl i (GramDeclVar vDecl) = printVarDecl i vDecl
 
 > printVarDecl :: Int -> GramVarDecl -> String
-> printVarDecl i (GramVarDeclType t declTail) = printType i t ++ printVarDeclTail 0 declTail
+> printVarDecl i (GramVarDeclType t declTail) = printType i t ++ " " ++ printVarDeclTail 0 declTail
 > printVarDecl i (GramVarDeclVar declTail) = tb i ++ "var " ++ printVarDeclTail 0 declTail
 
 > printFunDecl :: Int -> GramFuncDecl -> String
 > printFunDecl i (GramFuncDecl s declTail) = tb i ++ s ++ " " ++ printFuncDeclTail 0 declTail
 
 > printVarDeclTail :: Int -> GramVarDeclTail -> String
-> printVarDeclTail i (GramVarDeclTail s expr) = tb i ++ s ++ printExpr 0 expr
+> printVarDeclTail i (GramVarDeclTail s expr) = tb i ++ s ++ " = "++ printExpr 0 expr ++ ";\n"
 
 > printFuncDeclTail :: Int -> GramFuncDeclTail -> String
 > printFuncDeclTail i (GramFuncDeclTail args funTypes varDecls stmts) = 
 >           tb i ++  "(" ++ printMany printFArgs 0 args ++ ")"
 >           ++ " :: " ++ printMany printFunType 0 funTypes ++ "\n{\n"
 >           ++ printMany printVarDecl 1 varDecls 
->           ++ printMany printStmt 1 stmts ++ "\n}"
+>           ++ printMany printStmt 1 stmts ++ "}"
 
 > printRetType :: Int -> GramRetType -> String
 > printRetType i (GramRetType t) = printType i t
@@ -86,13 +86,14 @@
 > printBasicType i CharType = tb i ++ "Char"
 
 > printFArgs :: Int -> GramFArgs -> String
-> printFArgs i (GramFArgsId s fArgs) = tb i ++ s ++ printMany printFArgs 0 fArgs
+> printFArgs i (GramFArgsId s []) = tb i ++ s 
+> printFArgs i (GramFArgsId s fArgs) = tb i ++ s ++ ", " ++ printMany printFArgs 0 fArgs
 
 > printStmt :: Int -> GramStmt -> String
 > printStmt i (GramIf expr ifS elseS) = printIf i expr ifS elseS 
 > printStmt i (GramWhile expr stmts) = printWhile i expr stmts
 > printStmt i (GramAttr var expr) = printAttr i var expr
-> printStmt i (GramStmtFunCall call) = printFuncall i call
+> printStmt i (GramStmtFunCall call) = printFuncall i call ++ ";\n"
 > printStmt i (GramReturn exprs) = printReturn i exprs
 
 > printIf :: Int -> GramExp -> [GramStmt] -> [GramStmt] -> String
@@ -101,49 +102,49 @@
 >       	++ printExpr 0 expr ++ ")\n" 
 >           ++ tb i ++ "{\n" 
 >           ++ printMany printStmt (i+1) ifS 
->         	++ tb i ++ "}"
->           ++ tb i ++ printElse i elseS
+>         	++ tb i ++ "}\n"
+>           ++ printElse i elseS
 
 > printElse :: Int -> [GramStmt] -> String
 > printElse i [] = ""
 > printElse i ss = 
->           "\n" ++ tb i ++ "else\n"
+>           tb i ++ "else\n"
 >           ++ tb i ++ "{\n" 
 >           ++ printMany printStmt (i+1) ss 
->           ++ tb i++ "}"
+>           ++ tb i ++ "}\n"
 
 > printWhile :: Int -> GramExp -> [GramStmt] -> String
 > printWhile i expr ss = 
 >           tb i ++ "while ("
->           ++ printExpr i expr ++ ")\n"
+>           ++ printExpr 0 expr ++ ")\n"
 >           ++ tb i ++ "{\n"
->           ++ printMany printStmt (i+1) ss ++ "\n"
->           ++ tb i ++ "}"
+>           ++ printMany printStmt (i+1) ss 
+>           ++ tb i ++ "}\n"
 
 > printAttr :: Int -> GramVar -> GramExp -> String
 > printAttr i var expr = 
->           tb i ++ printVar i var
->           ++ " = " ++ printExpr i expr ++ ";\n"
+>           printVar i var
+>           ++ " = " ++ printExpr 0 expr ++ ";\n"
 
 > printFuncall :: Int -> GramFunCall -> String
 > printFuncall i (GramFunCall fId args) = 
 >           tb i ++ fId ++ "(" 
->           ++ printArgList i args ++ ")"
+>           ++ printArgList 0 args ++ ")"
 
 > printReturn :: Int -> [GramExp] -> String
 > printReturn i exprs = 
 >      	    tb i ++ "return " 
->           ++ printMany printExpr i exprs ++ ";\n"
+>           ++ printMany printExpr 0 exprs ++ ";\n"
 
 > printExpr :: Int -> GramExp -> String
-> printExpr i  (GramBinary op expr1 expr2) = printExpr i expr1 ++ printOp op ++ printExpr 0 expr2
-> printExpr i  (GramUnary op expr) = printOp op ++ printExpr 0 expr
-> printExpr i  (GramBool b) = tb i ++ show b
-> printExpr i  (GramChar c) = tb i ++ show c
-> printExpr i  (GramNum n) = tb i ++ show n
+> printExpr i  (GramBinary op expr1 expr2) = "(" ++ printExpr i expr1 ++ printOp op ++ printExpr 0 expr2 ++ ")"
+> printExpr i  (GramUnary op expr) = "(" ++ printOp op ++ printExpr 0 expr ++ ")" ++ ")"
+> printExpr i  (GramBool b) = tb i ++ show b 
+> printExpr i  (GramChar c) = tb i ++ show c 
+> printExpr i  (GramNum n) = tb i ++ show n 
 > printExpr i  (GramExpFunCall call) = printFuncall i call
 > printExpr i  (GramExpId var) = printVar i var
-> printExpr i  (GramExpTuple expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ ", " ++ printExpr 0 expr2 ++ ")"
+> printExpr i  (GramExpTuple expr1 expr2) = tb i ++ "("++ printExpr 0 expr1 ++ ", " ++ printExpr 0 expr2 ++ ")"
 > printExpr i  (GramEmptyList) = tb i ++ "[]"
 
 > printArgList :: Int -> GramArgList -> String
