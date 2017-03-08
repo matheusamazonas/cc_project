@@ -575,7 +575,7 @@ the corrent GramDecl with it.
 >   void $ isToken TokenCloseP
 >   optFunType <- optionMaybe pOptType
 >   void $ isToken TokenOpenCurlyB
->   vars <- many pVarDecl
+>   vars <- many $ try pVarDecl
 >   stmts <- many1 pStmt
 >   void $ isToken TokenCloseCurlyB
 >   let args = maybeToList optFArgs
