@@ -1,3 +1,5 @@
+> module Test where
+
 > import Parser 
 > import Grammar
 > import Lexer (lexer)
