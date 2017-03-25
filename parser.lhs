@@ -93,9 +93,8 @@ Grammar: BasicType = 'Int' | 'Bool' | 'Char'
 
 > pBasicType :: MyParser GramType
 > pBasicType = do
->   token <- isToken $ TokenType BoolType 
->   case token of 
->     TokenType t -> return $ GramBasicType t
+>   TokenType t <- isToken $ TokenType BoolType 
+>   return $ GramBasicType t
 
 Parses a tuple type (not a tuple!). Examples:
      (a,b)           (Int, Bool)
@@ -126,9 +125,8 @@ instead of the token itself because it's heavily used later.
 
 > pId :: MyParser GramId
 > pId = do
->   i <- isToken $ TokenId ""
->   case i of
->     TokenId i -> return i
+>   TokenId i <- isToken $ TokenId ""
+>   return i
 
 Parser for Void return type. We need this parser just to
 wrap the TokenVoid in the grammar's type for Void
@@ -277,9 +275,8 @@ Grammar: Exp4 = Exp5 [ (('+' | '-') Exp5)* ]
 >     pPlus = isToken $ TokenOp Plus
 >     pMinus = isToken $ TokenOp Minus
 >     pOp = do
->       op <- pPlus <|> pMinus
->       case op of 
->         TokenOp o -> return $ GramBinary o
+>       TokenOp o <- pPlus <|> pMinus
+>       return $ GramBinary o
 
 Parser for binary operators *, / and %
 Grammar: Exp5 = Exp6 [ (('*' | '/' | '%') Exp6)* ]
@@ -291,9 +288,8 @@ Grammar: Exp5 = Exp6 [ (('*' | '/' | '%') Exp6)* ]
 >     pDivision = isToken $ TokenOp Division
 >     pMod = isToken $ TokenOp Mod
 >     pOp = do
->       op <- pTimes <|> pDivision <|> pMod
->       case op of
->         TokenOp o -> return $ GramBinary o
+>       TokenOp o <- pTimes <|> pDivision <|> pMod
+>       return $ GramBinary o
 
 Parser for unary operators !(boolean not) and -(int negation)
 Grammar: Exp6 = [ ('!' | '-') ] Exp7
