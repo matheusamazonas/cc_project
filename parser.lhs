@@ -4,7 +4,7 @@
 > import Text.Parsec.Pos (SourcePos, newPos)
 > import Text.Parsec.Combinator (optional, optionMaybe, many1, chainl1)
 > import Control.Monad (void)
-> import Control.Applicative ((<$>), (<*>), (<*), (*>), (<$))
+> import Control.Applicative ((<$>))
 > import Data.Maybe (maybeToList)
 > import Lexer (lexer)
 > import Grammar
