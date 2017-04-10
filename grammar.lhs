@@ -70,7 +70,7 @@
 >    | GramWhile GramExp [GramStmt]
 >    | GramAttr GramVar GramExp
 >    | GramStmtFunCall GramFunCall
->    | GramReturn [GramExp] 
+>    | GramReturn (Maybe GramExp)
 >   deriving (Show, Eq)   
 
 > data GramVarDecl = 

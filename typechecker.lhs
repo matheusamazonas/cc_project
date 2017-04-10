@@ -6,6 +6,23 @@
 
 > type Environment = [(String, Type)]
 
+> matchExprType :: Environment -> GramExp -> Type -> Maybe Type
+> matchExprType env e t = do
+>   t1 <- inferExpT env e
+>   if t1 == t then (Just t1) else Nothing
+
+> matchBinExpr :: Environment -> GramExp -> GramExp -> Maybe Type
+> matchBinExpr env e1 e2 = do
+>   t1 <- inferExpT env e1
+>   t2 <- inferExpT env e2
+>   if t1 == t2 then (Just t1) else Nothing
+
+> matchBinExprType :: Environment -> GramExp -> GramExp -> Type -> Maybe Type
+> matchBinExprType env e1 e2 t = do
+>   t1 <- inferExpT env e1
+>   t2 <- inferExpT env e2
+>   if t1 == t && t2 == t then (Just t) else Nothing
+
 > inferExpT :: Environment -> GramExp -> Maybe Type
 > inferExpT env (GramBool _) = Just BoolT
 > inferExpT env (GramChar _) = Just CharT
@@ -28,24 +45,11 @@
 > inferExpT env (GramExpFunCall (GramFunCall i _)) = lookup i env
 > inferExpT env (GramExpTuple e1 e2) = inferExpT env e1 >>= (\x -> inferExpT env e2 >>= (\y -> Just (TupleT x y)))
 
-
 > checkExpT :: Environment -> GramExp -> Type -> Bool
 > checkExpT env e t = inferExpT env e == Just t
 
-> matchExprType :: Environment -> GramExp -> Type -> Maybe Type
-> matchExprType env e t = do
->   t1 <- inferExpT env e
->   if t1 == t then (Just t1) else Nothing
-
-> matchBinExpr :: Environment -> GramExp -> GramExp -> Maybe Type
-> matchBinExpr env e1 e2 = do
->   t1 <- inferExpT env e1
->   t2 <- inferExpT env e2
->   if t1 == t2 then (Just t1) else Nothing
-
-> matchBinExprType :: Environment -> GramExp -> GramExp -> Type -> Maybe Type
-> matchBinExprType env e1 e2 t = do
->   t1 <- inferExpT env e1
->   t2 <- inferExpT env e2
->   if t1 == t && t2 == t then (Just t) else Nothing
-
+> inferStmtT :: Environment -> GramStmt -> Maybe Type
+> inferStmtT env (GramIf expr t _) = if checkExpT env expr BoolT then Just VoidT else Nothing
+> inferStmtT env (GramWhile expr _) = if checkExpT env expr BoolT then Just VoidT else Nothing
+> inferStmtT env (GramStmtFunCall _) = Just VoidT
+> inferStmtT env (GramReturn mr) = mr >>= inferExpT env

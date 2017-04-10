@@ -476,8 +476,7 @@ Grammar: 'return' [ Exp ] ';'
 >   void $ isToken TokenReturn
 >   opt <- optionMaybe pExpr
 >   void $ isToken TokenEOL
->   let expr = maybeToList opt in 
->     return $ GramReturn expr
+>   return $ GramReturn opt
 
 The parser pVarDecl is not used in Decl. It's used inside FuncDeclTail 
 in the grammar rule that says that a function may have many variables
