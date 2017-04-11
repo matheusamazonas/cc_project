@@ -19,15 +19,15 @@ from http://osa1.net/posts/2012-08-30-separating-lexing-and-parsing-in-parsec.ht
 > advance _ _ ((_, pos) : _) = pos
 > advance pos _ [] = pos
 
-> satisfy :: (PosToken -> Bool) -> MyParser Token
+> satisfy :: (PosToken -> Bool) -> MyParser PosToken
 > satisfy f = tokenPrim show
 >     advance
->     (\c -> if f c then Just (fst c) else Nothing)
+>     (\c -> if f c then Just c else Nothing)
 
 Given a Token, parses any token of that kind. Uses the
 function "matchToken" to compare them. Check below.
 
-> isToken :: Token -> MyParser Token
+> isToken :: Token -> MyParser PosToken
 > isToken t = (satisfy $ (matchToken t) . fst) <?> show t
 
 Since  some tokens are parameterized, we can't jsut compare
@@ -51,8 +51,8 @@ that the token is a TokenBool
 
 > pBool :: MyParser GramExp
 > pBool = do
->   TokenBool b <- isToken (TokenBool True)
->   return $ GramBool b
+>   (TokenBool b, p) <- isToken (TokenBool True)
+>   return $ GramBool p b
 
 Parses a Char. Remember that the isToken function uses the 
 matchToken and  that the value we send to it is a dummy value. 
@@ -61,8 +61,8 @@ that the token is a TokenChar
 
 > pChar :: MyParser GramExp
 > pChar = do
->   TokenChar c <- isToken $ TokenChar ' '
->   return $ GramChar c
+>   (TokenChar c, p) <- isToken $ TokenChar ' '
+>   return $ GramChar p c
 
 Parses an Int. Keep in mind that the - is optional. Also, 
 remember that the isToken function uses the matchToken and 
@@ -73,10 +73,10 @@ token is a TokenNum
 > pInt :: MyParser GramExp
 > pInt = do
 >   optMinus <- optionMaybe $ isToken $ TokenOp Minus	
->   TokenNum num <- isToken (TokenNum 0)
+>   (TokenNum num, p) <- isToken (TokenNum 0)
 >   case optMinus of 
->     Nothing -> return $ GramNum num
->     Just _  -> return $ GramNum (-num)
+>     Nothing -> return $ GramNum p num
+>     Just _  -> return $ GramNum p (-num)
 
 Parses a type. Since pId returns a GramId (String), we 
 need to cosntruct a GramIdType by mapping the constructor
@@ -93,8 +93,8 @@ Grammar: BasicType = 'Int' | 'Bool' | 'Char'
 
 > pBasicType :: MyParser GramType
 > pBasicType = do
->   TokenType t <- isToken $ TokenType BoolType 
->   return $ GramBasicType t
+>   (TokenType t, p) <- isToken $ TokenType BoolType 
+>   return $ GramBasicType p t
 
 Parses a tuple type (not a tuple!). Examples:
      (a,b)           (Int, Bool)
@@ -102,12 +102,12 @@ Grammar: ’(’ Type ’,’ Type ’)’
 
 > pTupleType :: MyParser GramType
 > pTupleType = do
->   void $ isToken TokenOpenP
+>   (_, p) <- isToken TokenOpenP
 >   t1 <- pType
 >   void $ isToken TokenComma
 >   t2 <- pType
 >   void $ isToken TokenCloseP
->   return $ GramTupleType t1 t2
+>   return $ GramTupleType p t1 t2
 
 Parses a list type (not a list!). Examples:
     [Int]         ;          [(Bool, Int)]  
@@ -115,26 +115,26 @@ Grammar: ’[’ Type ’]’
 
 > pListType :: MyParser GramType
 > pListType = do
->   void $ isToken TokenOpenSquareB
+>   (_, p) <- isToken TokenOpenSquareB
 >   t <- pType
 >   void $ isToken TokenCloseSquareB
->   return $ GramListType t
+>   return $ GramListType p t
 
 Parser for any TokenId. Returns the string inside the token
 instead of the token itself because it's heavily used later.
 
 > pId :: MyParser GramId
 > pId = do
->   TokenId i <- isToken $ TokenId ""
->   return i
+>   (TokenId i, p) <- isToken $ TokenId ""
+>   return $ Id p i
 
 Parser for Void return type. We need this parser just to
 wrap the TokenVoid in the grammar's type for Void
 
 > pVoidType :: MyParser GramRetType
 > pVoidType = do 
->   void $ isToken TokenVoidType
->   return GramVoidType
+>   (_, p) <- isToken TokenVoidType
+>   return $ GramVoidType p
 
 Parser for function return types.
 Grammar: Type | 'Void'
@@ -171,10 +171,10 @@ Grammar: FArgs = id [ ',' FArgs ]
 
 > pFArgs :: MyParser GramFArgs
 > pFArgs = do
->   i <- pId
+>   (Id i p) <- pId
 >   opt <- optionMaybe $ pOpt
 >   let args = maybeToList opt in
->     return $ GramFArgsId i args
+>     return $ GramFArgsId (Id i p) args 
 >   where 
 >     pOpt = do
 >       void $ isToken TokenComma
@@ -202,13 +202,13 @@ Grammar: Exp = Exp1 [ '||' Exp ]
 >   opt <- optionMaybe pOpt
 >   case opt of
 >     Nothing -> return e1
->     Just (TokenOp op, e2) -> return $ GramBinary op e1 e2
+>     Just (TokenOp op, e2, p) -> return $ GramBinary p op e1 e2
 >   where
 >     pEquals = isToken $ TokenOp LogicalOr
 >     pOpt = do
->       op <- pEquals
+>       (op, p) <- pEquals
 >       e2 <- pExpr
->       return (op, e2)
+>       return (op, e2, p)
 
 Parser for binary operator && (and)
 Grammar: Epx1 = Exp2 [ '&&' Exp1 ]
@@ -219,13 +219,13 @@ Grammar: Epx1 = Exp2 [ '&&' Exp1 ]
 >   opt <- optionMaybe pOpt
 >   case opt of
 >     Nothing -> return e1
->     Just (TokenOp op, e2) -> return $ GramBinary op e1 e2
+>     Just (TokenOp op, e2, p) -> return $ GramBinary p op e1 e2 
 >   where
 >     pEquals = isToken $ TokenOp LogicalAnd
 >     pOpt = do
->       op <- pEquals
+>       (op, p) <- pEquals
 >       e2 <- pExpr1
->       return (op, e2)
+>       return (op, e2, p)
 
 Parser for relational operators (<. >, <=, >=, ==, !=)
 Grammar: Exp2 = Exp3 [ ('==' | '!=' | '<' | '<=' | '>' | '>=') Exp2 ]
@@ -236,7 +236,7 @@ Grammar: Exp2 = Exp3 [ ('==' | '!=' | '<' | '<=' | '>' | '>=') Exp2 ]
 >   opt <- optionMaybe pOpt
 >   case opt of
 >     Nothing -> return e1
->     Just (TokenOp op, e2) -> return $ GramBinary op e1 e2
+>     Just (TokenOp op, e2, p) -> return $ GramBinary p op e1 e2
 >   where
 >     pEquals = isToken $ TokenOp Equals
 >     pDifferent = isToken $ TokenOp Different
@@ -245,9 +245,9 @@ Grammar: Exp2 = Exp3 [ ('==' | '!=' | '<' | '<=' | '>' | '>=') Exp2 ]
 >     pGreater = isToken $ TokenOp GreaterThan
 >     pGreaterEq = isToken $ TokenOp GreatherOrEqual
 >     pOpt = do
->       op <- pEquals <|> pDifferent <|> pLess <|> pLessEq <|> pGreater <|> pGreaterEq
+>       (op, p) <- pEquals <|> pDifferent <|> pLess <|> pLessEq <|> pGreater <|> pGreaterEq
 >       e2 <- pExpr2 
->       return(op, e2)
+>       return(op, e2, p)
 
 Parser for lists
 Grammar: Exp3 = Exp4 [  ':' Exp3 ]
@@ -258,13 +258,13 @@ Grammar: Exp3 = Exp4 [  ':' Exp3 ]
 >   opt <- optionMaybe pOpt
 >   case opt of
 >     Nothing -> return e1
->     Just (TokenOp op, e2) -> return $ GramBinary op e1 e2
+>     Just (TokenOp op, e2, p) -> return $ GramBinary p op e1 e2 
 >   where
 >     pList = isToken $ TokenOp ListConst
 >     pOpt = do
->       op <- pList
+>       (op, p) <- pList
 >       e2 <- pExpr3 
->       return(op, e2)
+>       return(op, e2, p)
 
 Parser for binary operators + and -
 Grammar: Exp4 = Exp5 [ (('+' | '-') Exp5)* ]
@@ -275,8 +275,8 @@ Grammar: Exp4 = Exp5 [ (('+' | '-') Exp5)* ]
 >     pPlus = isToken $ TokenOp Plus
 >     pMinus = isToken $ TokenOp Minus
 >     pOp = do
->       TokenOp o <- pPlus <|> pMinus
->       return $ GramBinary o
+>       (TokenOp o, p) <- pPlus <|> pMinus
+>       return $ GramBinary p o
 
 Parser for binary operators *, / and %
 Grammar: Exp5 = Exp6 [ (('*' | '/' | '%') Exp6)* ]
@@ -288,8 +288,8 @@ Grammar: Exp5 = Exp6 [ (('*' | '/' | '%') Exp6)* ]
 >     pDivision = isToken $ TokenOp Division
 >     pMod = isToken $ TokenOp Mod
 >     pOp = do
->       TokenOp o <- pTimes <|> pDivision <|> pMod
->       return $ GramBinary o
+>       (TokenOp o, p) <- pTimes <|> pDivision <|> pMod
+>       return $ GramBinary p o
 
 Parser for unary operators !(boolean not) and -(int negation)
 Grammar: Exp6 = [ ('!' | '-') ] Exp7
@@ -300,7 +300,7 @@ Grammar: Exp6 = [ ('!' | '-') ] Exp7
 >   expr <- pExpr7
 >   case opt of
 >     Nothing -> return (expr)
->     Just (TokenOp op) -> return $ GramUnary op expr
+>     Just (TokenOp op, p) -> return $ GramUnary p op expr
 >   where
 >     oNot = isToken $ TokenOp LogicalNot
 >     oMinus = isToken $ TokenOp Minus
@@ -316,14 +316,14 @@ Grammar: Exp8 = id [Field | ArgList]
 
 > pExpr8 :: MyParser GramExp
 > pExpr8 = do
->   i <- pId
+>   id <- pId
 >   opt <- optionMaybe pOpt
 >   case opt of
->     Nothing -> return (GramExpId (Var i []))
+>     Nothing -> return $ GramExpId (Var id []) 
 >     Just o -> do
 >     case o of	
->       Left args -> return $ GramExpFunCall (GramFunCall i args)
->       Right field -> return $ GramExpId (Var i [field])
+>       Left args -> return $ GramExpFunCall (GramFunCall id args) 
+>       Right field -> return $ GramExpId (Var id [field]) 
 >   where 
 >     pOpt = (Left) <$> pArgList <|> (Right) <$> pField
 
@@ -332,13 +332,13 @@ Grammar: Exp9 = '(' Exp [ ',' Exp ] ')'
 
 > pExpr9 :: MyParser GramExp
 > pExpr9 = do
->   void $ isToken TokenOpenP
+>   (_, p) <- isToken TokenOpenP
 >   e1 <- pExpr
 >   opt <- optionMaybe pOpt
 >   void $ isToken TokenCloseP
 >   case opt of
 >     Nothing -> return e1
->     Just e2 -> return $ GramExpTuple e1 e2
+>     Just e2 -> return $ GramExpTuple p e1 e2
 >   where
 >     pOpt = do
 >       void $ isToken TokenComma
@@ -347,9 +347,9 @@ Grammar: Exp9 = '(' Exp [ ',' Exp ] ')'
 
 > pEmptyList :: MyParser GramExp
 > pEmptyList = do
->   void $ isToken TokenOpenSquareB
+>   (_, p) <- isToken TokenOpenSquareB
 >   void $ isToken TokenCloseSquareB
->   return GramEmptyList
+>   return $ GramEmptyList p
 
 Grammar: ActArgs = Exp [ ',' ActArgs ]
 
@@ -372,12 +372,12 @@ id is one of the reserved ones, it returns a constructor
 and if not, returns Nothing (which should never occur in
 a well formed program).
 
-> constField :: Token -> Maybe ([GramField] -> GramField)
-> constField (TokenId "hd")  = Just Head 
-> constField (TokenId "tl")  = Just Tail 
-> constField (TokenId "fst") = Just First 
-> constField (TokenId "snd") = Just Second
-> constField _               = Nothing 
+> constField :: PosToken -> Maybe ([GramField] -> GramField)
+> constField (TokenId "hd", p)  = Just $ Head p
+> constField (TokenId "tl", p)  = Just $ Tail p
+> constField (TokenId "fst", p) = Just $ First p
+> constField (TokenId "snd", p) = Just $ Second p
+> constField _                  = Nothing 
 
 The SPL has a limited, well-defined list of fields available:
 hd (head), tl (tail), fst (first) and snd (second). Every 
@@ -406,7 +406,7 @@ This parser is self-explanatory.
 > pFuncVarDecl :: MyParser GramStmt
 > pFuncVarDecl = do
 >   varD <- pVarDecl
->   return (GramFunVarDecl varD)
+>   return $ GramFunVarDecl varD
 
 Here a common prefix problem arises because both attribution and
 function call start with "id". So, we left refactor this rule by
@@ -416,12 +416,12 @@ attribution body (pAttribBody)
 
 > pStmt1 :: MyParser GramStmt
 > pStmt1 = do
->   i <- pId
+>   (Id p i) <- pId
 >   opt <- (Left) <$> pAttribBody <|> (Right) <$> pArgList
 >   void $ isToken TokenEOL
 >   case opt of
->     Left (field, expr) -> return $ GramAttr (Var i field) expr
->     Right args -> return $ GramStmtFunCall (GramFunCall i args)
+>     Left (field, expr) -> return $ GramAttr p (Var (Id p i) field) expr
+>     Right args -> return $ GramStmtFunCall (GramFunCall (Id p i) args) 
 
 An attribution body is anything that comes after the variable name:
          " [Field] '='' Expr ';'' "
@@ -438,7 +438,7 @@ Grammar: 'if' '(' Exp ')' '{' Stmt* '}' [ 'else' '{' Stmt* '}' ]
 
 > pIf :: MyParser GramStmt
 > pIf = do
->   void $ isToken TokenIf
+>   (_, p) <- isToken TokenIf
 >   void $ isToken TokenOpenP
 >   condition <- pExpr
 >   void $ isToken TokenCloseP
@@ -447,8 +447,8 @@ Grammar: 'if' '(' Exp ')' '{' Stmt* '}' [ 'else' '{' Stmt* '}' ]
 >   void $ isToken TokenCloseCurlyB
 >   optElse <- optionMaybe pElse
 >   case optElse of
->     Nothing -> return $ GramIf condition stmtsIf []
->     Just stmstsElse -> return $ GramIf condition stmtsIf stmstsElse
+>     Nothing -> return $ GramIf p condition stmtsIf []
+>     Just stmstsElse -> return $ GramIf p condition stmtsIf stmstsElse
 
 pElse is used just internally in pIf because the ELSE part is 
 optional.
@@ -465,23 +465,23 @@ Grammar: 'while' '(' Exp ')' '{' Stmt* '}'
 
 > pWhile :: MyParser GramStmt
 > pWhile = do
->   void $ isToken TokenWhile
+>   (_, p) <- isToken TokenWhile
 >   void $ isToken TokenOpenP
 >   condition <- pExpr
 >   void $ isToken TokenCloseP 	
 >   void $ isToken TokenOpenCurlyB
 >   stmts <- many pStmt
 >   void $ isToken TokenCloseCurlyB
->   return $ GramWhile condition stmts
+>   return $ GramWhile p condition stmts 
 
 Grammar: 'return' [ Exp ] ';'
 
 > pReturn :: MyParser GramStmt
 > pReturn = do
->   void $ isToken TokenReturn
+>   (_, p) <- isToken TokenReturn
 >   opt <- optionMaybe pExpr
 >   void $ isToken TokenEOL
->   return $ GramReturn opt
+>   return $ GramReturn p opt
 
 The parser pVarDecl is not used in Decl. It's used inside FuncDeclTail 
 in the grammar rule that says that a function may have many variables
@@ -506,7 +506,7 @@ Chech comments above.
 > pVarDeclVar = do
 >   void $ isToken TokenVar
 >   declTail <- pVarDeclTail
->   return $ GramVarDeclVar declTail
+>   return $ GramVarDeclVar declTail 
 
 Here starts the parsers involved with Decl. Decl can be either a VarDecl
 (variable declaration) or a FunDecl (function declaration). A hidden 
@@ -562,11 +562,11 @@ the corrent GramDecl with it.
 
 > pVarDeclTail :: MyParser GramVarDeclTail
 > pVarDeclTail = do
->   i <- pId
+>   (Id i p) <- pId
 >   void $ isToken TokenAttribution
 >   expr <- pExpr
 >   void $ isToken TokenEOL
->   return $ GramVarDeclTail i expr
+>   return $ GramVarDeclTail (Id i p) expr 
 
 > pFuncDeclTail :: MyParser GramFuncDeclTail
 > pFuncDeclTail = do

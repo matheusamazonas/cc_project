@@ -1,8 +1,10 @@
 > module Grammar where
 
 > import Token (BasicType, Operation)
+> import Text.Parsec.Pos (SourcePos)
 
-> type GramId = String
+> data GramId = Id SourcePos String
+>   deriving (Show, Eq)
 
 > type Gram = [GramDecl]
 
@@ -20,13 +22,13 @@
 
 > data GramRetType =
 >      GramRetType GramType
->    | GramVoidType
+>    | GramVoidType SourcePos
 >   deriving (Show, Eq)
 
 > data GramType =
->      GramBasicType BasicType
->    | GramTupleType GramType GramType
->    | GramListType GramType
+>      GramBasicType SourcePos BasicType
+>    | GramTupleType SourcePos GramType GramType 
+>    | GramListType SourcePos GramType 
 >    | GramIdType GramId
 >   deriving (Show, Eq)
 
@@ -35,15 +37,15 @@
 >   deriving (Show, Eq)
 
 > data GramExp = 
->      GramBinary Operation GramExp GramExp
->    | GramUnary Operation GramExp 
->    | GramBool Bool
->    | GramChar Char
->    | GramNum Int
+>      GramBinary SourcePos Operation GramExp GramExp
+>    | GramUnary SourcePos Operation GramExp
+>    | GramBool SourcePos Bool 
+>    | GramChar SourcePos Char 
+>    | GramNum SourcePos Int 
 >    | GramExpFunCall GramFunCall
 >    | GramExpId GramVar
->    | GramExpTuple GramExp GramExp
->    | GramEmptyList
+>    | GramExpTuple SourcePos GramExp GramExp
+>    | GramEmptyList SourcePos
 >   deriving (Show, Eq)
 
 > data GramArgList = 
@@ -59,18 +61,18 @@
 >   deriving (Show, Eq)
 
 > data GramField = 
->      First [GramField] 
->    | Second [GramField] 
->    | Head [GramField]
->    | Tail [GramField]
+>      First SourcePos [GramField] 
+>    | Second SourcePos [GramField] 
+>    | Head SourcePos [GramField] 
+>    | Tail SourcePos [GramField] 
 >   deriving (Show, Eq)
 
 > data GramStmt = 
->      GramIf GramExp [GramStmt] [GramStmt]
->    | GramWhile GramExp [GramStmt]
->    | GramAttr GramVar GramExp
+>      GramIf SourcePos GramExp [GramStmt] [GramStmt]
+>    | GramWhile SourcePos GramExp [GramStmt] 
+>    | GramAttr SourcePos GramVar GramExp 
 >    | GramStmtFunCall GramFunCall
->    | GramReturn (Maybe GramExp)
+>    | GramReturn SourcePos (Maybe GramExp)
 >    | GramFunVarDecl GramVarDecl
 >   deriving (Show, Eq)   
 
