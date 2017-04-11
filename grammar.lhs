@@ -71,6 +71,7 @@
 >    | GramAttr GramVar GramExp
 >    | GramStmtFunCall GramFunCall
 >    | GramReturn (Maybe GramExp)
+>    | GramFunVarDecl GramVarDecl
 >   deriving (Show, Eq)   
 
 > data GramVarDecl = 
@@ -83,7 +84,7 @@
 >   deriving (Show, Eq)
 
 > data GramFuncDeclTail = 
->      GramFuncDeclTail [GramFArgs] [GramFunType] [GramVarDecl] [GramStmt]
+>      GramFuncDeclTail [GramFArgs] [GramFunType] [GramStmt]
 >   deriving (Show, Eq)
 
 > data GramFuncDecl = 

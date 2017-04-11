@@ -401,7 +401,12 @@ field isn't one of the reserved ones, it throwns an error.
 This parser is self-explanatory.
 
 > pStmt :: MyParser GramStmt
-> pStmt = pIf <|> pWhile <|> pStmt1 <|> pReturn
+> pStmt = pIf <|> pWhile <|> pStmt1 <|> pReturn <|> pFuncVarDecl
+
+> pFuncVarDecl :: MyParser GramStmt
+> pFuncVarDecl = do
+>   varD <- pVarDecl
+>   return (GramFunVarDecl varD)
 
 Here a common prefix problem arises because both attribution and
 function call start with "id". So, we left refactor this rule by
@@ -570,12 +575,11 @@ the corrent GramDecl with it.
 >   void $ isToken TokenCloseP
 >   optFunType <- optionMaybe pOptType
 >   void $ isToken TokenOpenCurlyB
->   vars <- many $ try pVarDecl
 >   stmts <- many1 pStmt
 >   void $ isToken TokenCloseCurlyB
 >   let args = maybeToList optFArgs
 >       fType = maybeToList optFunType in 
->       return $ GramFuncDeclTail args fType vars stmts
+>       return $ GramFuncDeclTail args fType stmts
 >   where
 >     pOptType = do
 >       void $ isToken TokenFuncDecl
