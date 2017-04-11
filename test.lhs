@@ -211,7 +211,7 @@ Needs nesting:
 > example5 = "// Computes the product of a list of integers\nproduct ( list ) :: [Int] -> Int {\n	if ( isEmpty ( list ) ) {\n		return 1;\n	} else {\n		return list.hd * product ( list.tl );\n	}\n}"
 > example6 = "// Generates a list of integers from the first to the last argument\nfromTo ( from, to ) :: Int Int -> [ Int ] {\n	if ( from <= to ) {\n		return from : fromTo ( from + 1, to );\n	} else {\n		return [] ;\n	}\n}"
 > example7 = "// Make a reversed copy of any list\nreverse ( list ) :: [ t ] -> [ t ] {\n	var accu = [];\n	while ( ! isEmpty ( list ) ) {\n		accu = list.hd : accu ;\n		list = list.tl;\n	}\n	return accu ;\n}"
-> example8 = "// Absolute value, in a strange layout\nabs ( n ) :: Int -> Int { if (n < 0) return -n; else return n ; }"
+> example8 = "// Absolute value, in a strange layout\nabs ( n ) :: Int -> Int { if (n < 0) { return -n; } else { return n ; } }"
 > example9 = "// make a copy of a tuple with swapped elements\nswapCopy ( pair ) :: (a, b) -> (b, a) {\n	return ( pair. snd, pair.fst );\n}"	
 > example10 = "// swap the elements in a tuple\nswap ( tuple ) :: (a, a) -> (a, a) {\n	var tmp = tuple.fst ;\n	tuple.fst = tuple.snd;\n	tuple.snd = tmp;\n	return tuple;\n}"	
 > example11 = "// list append\nappend ( l1 , l2 ) :: [t] [t] -> [t] {\n	if ( isEmpty ( l1 ) ) {\n		return l2 ;\n	} else {\n		l1.tl = append ( l1.tl, l2 );\n		return l1;\n	}\n}"
