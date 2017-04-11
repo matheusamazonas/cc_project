@@ -6,7 +6,6 @@
 > import Token 
 
 > import Lexer
-> import Test
 
 > data Type = TBool | TInt | TChar | TVoid | TTuple Type Type | TList Type | TFunc [Type] Type | TVar Int
 >   deriving (Show, Eq, Ord)
@@ -18,7 +17,7 @@ accompanied by the number of the next fresh type variable.
 > type Substitutions = [(Int, Type)]
 > type Scope = [(String, Int)]
 > type Environment = (Substitutions, [Scope], Int)
-
+> type TypeError = (String, SourcePos)
 
 
 Unification algorithm U
@@ -26,30 +25,31 @@ Unification algorithm U
 Returns Just a list of substitutions ((TVar) Int -> Type) if the two types
 can be unified, otherwise returns Nothing
 
-> unify :: Type -> Type -> Maybe Substitutions
-> unify TInt TInt    = Just []
-> unify TBool TBool  = Just []
-> unify (TVar i) t
->   | t == (TVar i)  = Just []
->   | occurs i t     = Nothing
->   | otherwise      = Just [(i, t)]
-> unify t (TVar i) 
->   | t == (TVar i)  = Just []
->   | occurs i t     = Nothing
->   | otherwise      = Just [(i, t)]
-> unify (TList ta) (TList tb) = unify ta tb
-> unify (TTuple ta1 ta2) (TTuple tb1 tb2) = do
->   sub1 <- unify ta1 tb1
->   sub2 <- unify (applySub sub1 ta2) (applySub sub1 tb2)
+> unify :: Type -> Type -> SourcePos -> Either TypeError Substitutions
+> unify TInt TInt   _  = Right []
+> unify TBool TBool _  = Right []
+> unify (TVar i) t p
+>   | t == (TVar i)    = Right []
+>   | occurs i t       = Left ("Can't unify1", p)
+>   | otherwise        = Right [(i, t)]
+> unify t (TVar i) p
+>   | t == (TVar i)    = Right []
+>   | occurs i t       = Left ("Can't unify2", p)
+>   | otherwise        = Right [(i, t)]
+> unify (TList ta) (TList tb) p = unify ta tb p
+> unify (TTuple ta1 ta2) (TTuple tb1 tb2) p = do
+>   sub1 <- unify ta1 tb1 p
+>   sub2 <- unify (applySub sub1 ta2) (applySub sub1 tb2) p
 >   return (unique (sub1 ++ sub2))
-> unify (TFunc [] ta2) (TFunc [] tb2) = unify ta2 tb2
-> unify (TFunc (ta1:ta1s) ta2) (TFunc (tb1:tb1s) tb2) = do
->   sub1 <- unify ta1 tb1
+> unify (TFunc [] ta2) (TFunc [] tb2) p = unify ta2 tb2 p
+> unify (TFunc (ta1:ta1s) ta2) (TFunc (tb1:tb1s) tb2) p = do
+>   sub1 <- unify ta1 tb1 p
 >   let nta1s = [applySub sub1 nta1 | nta1 <- ta1s]
 >   let ntb1s = [applySub sub1 ntb1 | ntb1 <- tb1s]
->   sub2 <- unify (TFunc nta1s ta2) (TFunc ntb1s tb2)
+>   sub2 <- unify (TFunc nta1s ta2) (TFunc ntb1s tb2) p
 >   return (unique (sub1 ++ sub2))
-> unify _ _          = Nothing
+> unify _ _ p         = Left ("Can't unify3", p)
+
 
 
 Type inference algorithm M
@@ -83,32 +83,32 @@ inferFunDeclT env fid (GramFuncDeclTail [] [] stmts) rettyp = do
 
 
 
-> inferDeclT :: Environment -> GramDecl -> Maybe Environment
-> inferDeclT env (GramDeclFun (GramFuncDecl id funcDeclTail)) = Nothing
+> inferDeclT :: Environment -> GramDecl -> Either TypeError Environment
+> inferDeclT env (GramDeclFun (GramFuncDecl (Id p _) funcDeclTail)) = Left ("Cant infer", p)
 > inferDeclT env (GramDeclVar varDecl) = inferVarDeclT env varDecl
 
-> inferVarDeclT :: Environment -> GramVarDecl -> Maybe Environment
-> inferVarDeclT env (GramVarDeclVar (GramVarDeclTail (Id _ vid) e)) = do
+> inferVarDeclT :: Environment -> GramVarDecl -> Either TypeError Environment
+> inferVarDeclT env (GramVarDeclVar (GramVarDeclTail vid e)) = do
 >   env1 <- declareVar env vid
 >   var  <- varType env1 vid
 >   inferExpT env1 e var
-> inferVarDeclT env (GramVarDeclType gt (GramVarDeclTail (Id _ vid) e)) = do
+> inferVarDeclT env (GramVarDeclType gt (GramVarDeclTail (Id p i) e)) = do
 >   let t = convertType gt
->   env1 <- declareVar env vid
->   var  <- varType env1 vid
->   sub1 <- unify var t
+>   env1 <- declareVar env (Id p i)
+>   var  <- varType env1 (Id p i)
+>   sub1 <- unify var t p
 >   let env2 = (unique (envSubs env1 ++ sub1), envScopes env1, nextVar env1)
 >   inferExpT env2 e (applySub (envSubs env2) t)
 
 
 
-> inferBlockT :: Environment -> [GramStmt] -> Type -> Maybe Environment
-> inferBlockT env [] _ = Just env
+> inferBlockT :: Environment -> [GramStmt] -> Type -> Either TypeError Environment
+> inferBlockT env [] _ = Right env
 > inferBlockT env (stmt:stmts) t = do
 >   env1 <- inferStmtT env stmt t
 >   inferBlockT env1 stmts (applySub (envSubs env1) t)
 
-> inferStmtT :: Environment -> GramStmt -> Type -> Maybe Environment
+> inferStmtT :: Environment -> GramStmt -> Type -> Either TypeError Environment
 > inferStmtT env (GramIf p cond tr fa) rettyp        = do
 >   env1 <- inferExpT env cond TBool
 >   env2 <- inferBlockT (pushScope env1) tr (applySub (envSubs env1) rettyp)
@@ -125,84 +125,86 @@ inferFunDeclT env fid (GramFuncDeclTail [] [] stmts) rettyp = do
 >   env1 <- inferVarT (inc env) var fresh1
 >   env2 <- inferExpT env1 exp (applySub (envSubs env1) fresh1)
 >   return (unique ((envSubs env1) ++ (envSubs env2)), envScopes env2, nextVar env2)
-> inferStmtT env (GramStmtFunCall _) rettyp          = Nothing
+> inferStmtT env (GramStmtFunCall (GramFunCall (Id p _) _)) rettyp = Left ("Error on infetStmt", p)
 > inferStmtT env (GramFunVarDecl vardecl) rettyp     = inferVarDeclT env vardecl
 > inferStmtT env (GramReturn p ret) rettyp           = 
 >   case ret of
 >     Just exp -> inferExpT env exp rettyp
 >     Nothing  -> 
->       case unify TVoid rettyp of
->         Just sub -> Just (unique ((envSubs env) ++ sub), envScopes env, nextVar env)
->         Nothing  -> Nothing
-> inferstmtT _ _                                     = Nothing
+>       case unify TVoid rettyp p of
+>         Right sub   -> Right (unique ((envSubs env) ++ sub), envScopes env, nextVar env)
+>         Left uError -> Left uError
+> inferstmtT _ _                                     = Left ("Error on infetStmt", newPos "test_file" 1 1)
 
 
-> inferExpT :: Environment -> GramExp -> Type -> Maybe Environment
-> inferExpT env (GramBool p _) t                       = liftMaybe (envSubs env +?+ unify TBool t, envScopes env, nextVar env)
-> inferExpT env (GramChar p _) t                       = liftMaybe (envSubs env +?+ unify TChar t, envScopes env, nextVar env)
-> inferExpT env (GramNum p _) t                        = liftMaybe (envSubs env +?+ unify TInt t, envScopes env, nextVar env)
-> inferExpT env (GramEmptyList p) t                    = liftMaybe (envSubs env +?+ unify (TList (fresh env)) t, envScopes env, nextVar env + 1)
-> inferExpT env (GramBinary p Minus e1 e2) t           = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary p Plus e1 e2) t            = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary p Times e1 e2) t           = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary p Division e1 e2) t        = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary p Mod e1 e2) t             = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary p LessThan e1 e2) t        = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary p LessOrEqual e1 e2) t     = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary p GreaterThan e1 e2) t     = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary p GreatherOrEqual e1 e2) t = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary p LogicalOr e1 e2) t       = inferBinExprT env e1 e2 t TBool TBool
-> inferExpT env (GramBinary p LogicalAnd e1 e2) t      = inferBinExprT env e1 e2 t TBool TBool
-> inferExpT env (GramBinary p Equals e1 e2) t          = inferBinExprT (inc env) e1 e2 t (fresh env) TBool
-> inferExpT env (GramBinary p Different e1 e2) t       = inferBinExprT (inc env) e1 e2 t (fresh env) TBool
+
+> inferExpT :: Environment -> GramExp -> Type -> Either TypeError Environment
+> inferExpT env (GramBool p _) t                       = liftMaybe (envSubs env +?+ unify TBool t p, envScopes env, nextVar env) p
+> inferExpT env (GramChar p _) t                       = liftMaybe (envSubs env +?+ unify TChar t p, envScopes env, nextVar env) p
+> inferExpT env (GramNum p _) t                        = liftMaybe (envSubs env +?+ unify TInt t p, envScopes env, nextVar env) p
+> inferExpT env (GramEmptyList p) t                    = liftMaybe (envSubs env +?+ unify (TList (fresh env)) t p, envScopes env, nextVar env + 1) p
+> inferExpT env (GramBinary p Minus e1 e2) t           = inferBinExprT env e1 e2 t TInt TInt p
+> inferExpT env (GramBinary p Plus e1 e2) t            = inferBinExprT env e1 e2 t TInt TInt p
+> inferExpT env (GramBinary p Times e1 e2) t           = inferBinExprT env e1 e2 t TInt TInt p
+> inferExpT env (GramBinary p Division e1 e2) t        = inferBinExprT env e1 e2 t TInt TInt p
+> inferExpT env (GramBinary p Mod e1 e2) t             = inferBinExprT env e1 e2 t TInt TInt p
+> inferExpT env (GramBinary p LessThan e1 e2) t        = inferBinExprT env e1 e2 t TInt TInt p
+> inferExpT env (GramBinary p LessOrEqual e1 e2) t     = inferBinExprT env e1 e2 t TInt TInt p
+> inferExpT env (GramBinary p GreaterThan e1 e2) t     = inferBinExprT env e1 e2 t TInt TInt p
+> inferExpT env (GramBinary p GreatherOrEqual e1 e2) t = inferBinExprT env e1 e2 t TInt TInt p
+> inferExpT env (GramBinary p LogicalOr e1 e2) t       = inferBinExprT env e1 e2 t TBool TBool p
+> inferExpT env (GramBinary p LogicalAnd e1 e2) t      = inferBinExprT env e1 e2 t TBool TBool p
+> inferExpT env (GramBinary p Equals e1 e2) t          = inferBinExprT (inc env) e1 e2 t (fresh env) TBool p
+> inferExpT env (GramBinary p Different e1 e2) t       = inferBinExprT (inc env) e1 e2 t (fresh env) TBool p
 > inferExpT env (GramBinary p ListConst e1 e2) t       = do
 >   let fresh1 = fresh env
 >   env1 <- inferExpT (inc env) e1 fresh1
 >   env2 <- inferExpT env1 e2 (applySub (envSubs env1) (TList fresh1))
 >   let sub = (envSubs env1) ++ (envSubs env2)
->   res <- unify (applySub sub t) (applySub sub (TList fresh1))
+>   res <- unify (applySub sub t) (applySub sub (TList fresh1)) p
 >   return (unique (sub ++ res), envScopes env2, nextVar env2)
-> inferExpT env (GramUnary p Minus e) t                = inferUnExprT env e t TInt
-> inferExpT env (GramUnary p LogicalNot e) t           = inferUnExprT env e t TBool
-> inferExpT env (GramExpId gv) t                       = inferVarT env gv t
-> inferExpT env (GramExpFunCall (GramFunCall i _)) t   = Nothing
-> inferExpT env (GramExpTuple p  e1 e2) t              = do
+> inferExpT env (GramUnary p Minus e) t                       = inferUnExprT env e t TInt p
+> inferExpT env (GramUnary p LogicalNot e) t                  = inferUnExprT env e t TBool p
+> inferExpT env (GramExpId gv) t                              = inferVarT env gv t
+> inferExpT env (GramExpFunCall (GramFunCall (Id p _) _)) t   = Left ("Cant infer", p)
+> inferExpT env (GramExpTuple p  e1 e2) t                     = do
 >   let fresh1 = fresh env
 >   env1 <- inferExpT (inc env) e1 fresh1
 >   let fresh2 = fresh env1
 >   env2 <- inferExpT (inc env1) e2 fresh2
 >   let sub = (envSubs env1) ++ (envSubs env2)
->   res  <- unify (applySub sub t) (applySub sub (TTuple fresh1 fresh2))
+>   res  <- unify (applySub sub t) (applySub sub (TTuple fresh1 fresh2)) p
 >   return (unique (sub ++ res), envScopes env2, nextVar env2)
 
-> inferVarT :: Environment -> GramVar -> Type -> Maybe Environment
-> inferVarT env (Var (Id _ vid) gf) t = do
->   typ <- varType env vid
->   inferFieldT env typ gf t
+> inferVarT :: Environment -> GramVar -> Type -> Either TypeError Environment
+> inferVarT env (Var (Id p i) gf) t = do
+>   typ <- varType env (Id p i)
+>   inferFieldT env typ gf t p
 
-> inferFieldT :: Environment -> Type -> [GramField] -> Type -> Maybe Environment
-> inferFieldT env typ [] t = do
->   sub <- unify typ t
+
+> inferFieldT :: Environment -> Type -> [GramField] -> Type -> SourcePos -> Either TypeError Environment
+> inferFieldT env typ [] t sp = do
+>   sub <- unify typ t sp
 >   return (unique (envSubs env ++ sub), envScopes env, nextVar env)
-> inferFieldT env (TTuple typa _) [(First p gf)] t = inferFieldT env typa gf t
-> inferFieldT env (TTuple _ typb) [(Second p gf)] t = inferFieldT env typb gf t
-> inferFieldT env (TList typ) [(Head p gf)] t = inferFieldT env typ gf t
-> inferFieldT env (TList typ) [(Tail p gf)] t = inferFieldT env (TList typ) gf t
+> inferFieldT env (TTuple typa _) [(First p gf)] t sp = inferFieldT env typa gf t sp
+> inferFieldT env (TTuple _ typb) [(Second p gf)] t sp = inferFieldT env typb gf t sp
+> inferFieldT env (TList typ) [(Head p gf)] t sp = inferFieldT env typ gf t sp
+> inferFieldT env (TList typ) [(Tail p gf)] t sp = inferFieldT env (TList typ) gf t sp 
 
 
-> inferBinExprT :: Environment -> GramExp -> GramExp -> Type -> Type -> Type -> Maybe Environment
-> inferBinExprT env e1 e2 texp telem tres = do
+> inferBinExprT :: Environment -> GramExp -> GramExp -> Type -> Type -> Type -> SourcePos -> Either TypeError Environment
+> inferBinExprT env e1 e2 texp telem tres p = do
 >   env1 <- inferExpT env e1 telem
 >   env2 <- inferExpT env1 e2 (applySub (envSubs env1) telem)
 >   let sub = (envSubs env1) ++ (envSubs env2)
->   res  <- unify (applySub sub texp) (applySub sub tres)
+>   res  <- unify (applySub sub texp) (applySub sub tres) p
 >   return (unique (sub ++ res), envScopes env2, nextVar env2)
 
-> inferUnExprT :: Environment -> GramExp -> Type -> Type -> Maybe Environment
-> inferUnExprT env e texp tcomp = do
+> inferUnExprT :: Environment -> GramExp -> Type -> Type -> SourcePos -> Either TypeError Environment
+> inferUnExprT env e texp tcomp p = do
 >   env1 <- inferExpT env e tcomp
 >   let sub = envSubs env1
->   res <- unify (applySub sub texp) (applySub sub tcomp)
+>   res <- unify (applySub sub texp) (applySub sub tcomp) p
 >   return (unique (sub ++ res), envScopes env1, nextVar env1)
 
 
@@ -231,14 +233,14 @@ Occurs check
 
 Scope checks
 
-> varType :: Environment -> String -> Maybe Type
-> varType (subs, scopes, nxt) vid =
->   case varId (subs, scopes, nxt) vid of
->     Nothing -> Nothing
+> varType :: Environment -> GramId -> Either TypeError Type
+> varType (subs, scopes, nxt) (Id p iD) =
+>   case varId (subs, scopes, nxt) iD of
+>     Nothing -> Left ("error on varType", p)
 >     Just i  ->
 >       case lookup i subs of
->         Nothing -> Just (TVar i)
->         Just t  -> Just t
+>         Nothing -> Right (TVar i)
+>         Just t  -> Right t
 
 > varId :: Environment -> String -> Maybe Int
 > varId (_, [], _) _ = Nothing
@@ -247,11 +249,11 @@ Scope checks
 >     Just i  -> Just i
 >     Nothing -> varId (subs, scopes, nxt) vid
 
-> declareVar :: Environment -> String -> Maybe Environment
-> declareVar (subs, scope:scopes, nxt) vid =
->   case lookup vid scope of
->     Just _  -> Nothing
->     Nothing -> Just (subs, ((vid, nxt):scope):scopes, nxt+1)
+> declareVar :: Environment -> GramId -> Either TypeError Environment
+> declareVar (subs, scope:scopes, nxt) (Id p i) =
+>   case lookup i scope of
+>     Just _  -> Left ("error in declareVar", p)
+>     Nothing -> Right (subs, ((i, nxt):scope):scopes, nxt+1)
 
 > pushScope :: Environment -> Environment
 > pushScope (subs, scopes, nxt) = (subs, []:scopes, nxt)
@@ -280,13 +282,14 @@ Substitution / environment manipulation
 > unique :: (Ord a) => [a] -> [a]
 > unique = toList . fromList
 
-> (+?+) :: Substitutions -> Maybe Substitutions -> Maybe Substitutions
-> (+?+) suba (Just subb) = Just (suba ++ subb)
-> (+?+) suba Nothing     = Nothing
+> (+?+) :: Substitutions -> Either TypeError Substitutions -> Either TypeError Substitutions
+> (+?+) suba (Right subb) = Right (suba ++ subb)
+> (+?+) suba l    = l
 
-> liftMaybe :: (Maybe Substitutions, [Scope],Int) -> Maybe Environment
-> liftMaybe (Nothing, _, _)        = Nothing
-> liftMaybe (Just sub, scopes, i)  = Just (sub, scopes, i)
+
+> liftMaybe :: (Either TypeError Substitutions, [Scope], Int) -> SourcePos -> Either TypeError Environment
+> liftMaybe (Left _, _, _)         p = Left ("Error on liftMaybe", p)
+> liftMaybe (Right sub, scopes, i) p = Right (sub, scopes, i)
 
 > applySub :: Substitutions -> Type -> Type
 > applySub [] t                    = t
