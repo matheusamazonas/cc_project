@@ -1,6 +1,12 @@
+> module TypeChecker where
+
 > import Data.Set (toList, fromList)
 > import Grammar
+> import Text.Parsec.Pos (newPos, SourcePos)
 > import Token 
+
+> import Lexer
+> import Test
 
 > data Type = TBool | TInt | TChar | TVoid | TTuple Type Type | TList Type | TFunc [Type] Type | TVar Int
 >   deriving (Show, Eq, Ord)
@@ -10,7 +16,7 @@ A Substitutions is a list of these and an Environment is a list of them,
 accompanied by the number of the next fresh type variable.
 
 > type Substitutions = [(Int, Type)]
-> type Scope = [(GramId, Int)]
+> type Scope = [(String, Int)]
 > type Environment = (Substitutions, [Scope], Int)
 
 
@@ -56,8 +62,6 @@ to test something's type, call with and check binding for TVar 0:
 inferBlaT ([],[[]],1) (<expression>) (TVar 0)
 
 To implement:
-- statements (if, while) when also type-checking statements
-- variables and their fields
 - functions (see slides for their M-algorithm version)
 
 These require changes to the Environment structure; either additional items in the tuple,
@@ -68,26 +72,33 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 
 
 
+inferFunDeclT :: Environment -> GramId -> GramFuncDeclTail -> Type -> Maybe Environment
+inferFunDeclT env fid (GramFuncDeclTail [] [] stmts) rettyp = do
+  env1 <- inferBlockT (pushScope env) stmts rettyp
+  return (popScope env1)
+
+
+
+
+
 
 
 > inferDeclT :: Environment -> GramDecl -> Maybe Environment
 > inferDeclT env (GramDeclFun (GramFuncDecl id funcDeclTail)) = Nothing
 > inferDeclT env (GramDeclVar varDecl) = inferVarDeclT env varDecl
 
- inferFunDeclT :: Environment -> GramId -> GramFuncDeclTail -> Type -> Maybe Environment
-
 > inferVarDeclT :: Environment -> GramVarDecl -> Maybe Environment
-> inferVarDeclT env (GramVarDeclVar (GramVarDeclTail vid e)) = do
+> inferVarDeclT env (GramVarDeclVar (GramVarDeclTail (Id _ vid) e)) = do
 >   env1 <- declareVar env vid
 >   var  <- varType env1 vid
 >   inferExpT env1 e var
-> inferVarDeclT env (GramVarDeclType gt (GramVarDeclTail vid e)) = do
+> inferVarDeclT env (GramVarDeclType gt (GramVarDeclTail (Id _ vid) e)) = do
 >   let t = convertType gt
 >   env1 <- declareVar env vid
 >   var  <- varType env1 vid
 >   sub1 <- unify var t
 >   let env2 = (unique (envSubs env1 ++ sub1), envScopes env1, nextVar env1)
->   inferExpT env2 e t
+>   inferExpT env2 e (applySub (envSubs env2) t)
 
 
 
@@ -95,7 +106,7 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 > inferBlockT env [] _ = Just env
 > inferBlockT env (stmt:stmts) t = do
 >   env1 <- inferStmtT env stmt t
->   inferBlockT env1 stmts t
+>   inferBlockT env1 stmts (applySub (envSubs env1) t)
 
 > inferStmtT :: Environment -> GramStmt -> Type -> Maybe Environment
 > inferStmtT env (GramIf p cond tr fa) rettyp        = do
@@ -165,7 +176,7 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 >   return (unique (sub ++ res), envScopes env2, nextVar env2)
 
 > inferVarT :: Environment -> GramVar -> Type -> Maybe Environment
-> inferVarT env (Var vid gf) t = do
+> inferVarT env (Var (Id _ vid) gf) t = do
 >   typ <- varType env vid
 >   inferFieldT env typ gf t
 
@@ -220,7 +231,7 @@ Occurs check
 
 Scope checks
 
-> varType :: Environment -> GramId -> Maybe Type
+> varType :: Environment -> String -> Maybe Type
 > varType (subs, scopes, nxt) vid =
 >   case varId (subs, scopes, nxt) vid of
 >     Nothing -> Nothing
@@ -229,14 +240,14 @@ Scope checks
 >         Nothing -> Just (TVar i)
 >         Just t  -> Just t
 
-> varId :: Environment -> GramId -> Maybe Int
+> varId :: Environment -> String -> Maybe Int
 > varId (_, [], _) _ = Nothing
 > varId (subs, scope:scopes, nxt) vid =
 >   case lookup vid scope of
 >     Just i  -> Just i
 >     Nothing -> varId (subs, scopes, nxt) vid
 
-> declareVar :: Environment -> GramId -> Maybe Environment
+> declareVar :: Environment -> String -> Maybe Environment
 > declareVar (subs, scope:scopes, nxt) vid =
 >   case lookup vid scope of
 >     Just _  -> Nothing
