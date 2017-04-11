@@ -1,7 +1,7 @@
 > import Grammar
 > import Token 
 
-> data Type = TBool | TInt | TChar | TVoid | TTuple Type Type | TList Type | TFunc Type Type | TVar Int
+> data Type = TBool | TInt | TChar | TVoid | TTuple Type Type | TList Type | TFunc [Type] Type | TVar Int
 >   deriving (Show, Eq)
 
 A substitution is a function from type variables (numbered by Ints) to Types.
@@ -34,9 +34,12 @@ can be unified, otherwise returns Nothing
 >   sub1 <- unify ta1 tb1
 >   sub2 <- unify (applySub sub1 ta2) (applySub sub1 tb2)
 >   return (sub1 ++ sub2)
-> unify (TFunc ta1 ta2) (TFunc tb1 tb2) = do
+> unify (TFunc [] ta2) (TFunc [] tb2) = unify ta2 tb2
+> unify (TFunc (ta1:ta1s) ta2) (TFunc (tb1:tb1s) tb2) = do
 >   sub1 <- unify ta1 tb1
->   sub2 <- unify (applySub sub1 ta2) (applySub sub1 tb2)
+>   let nta1s = [applySub sub1 nta1 | nta1 <- ta1s]
+>   let ntb1s = [applySub sub1 ntb1 | ntb1 <- tb1s]
+>   sub2 <- unify (TFunc nta1s ta2) (TFunc ntb1s tb2)
 >   return (sub1 ++ sub2)
 > unify _ _          = Nothing
 
@@ -137,7 +140,8 @@ Occurs check
 > occurs :: Int -> Type -> Bool
 > occurs i (TTuple ta tb)          = (occurs i ta) || (occurs i tb)
 > occurs i (TList t)               = occurs i t
-> occurs i (TFunc ta tb)           = (occurs i ta) || (occurs i tb)
+> occurs i (TFunc [] tb)           = (occurs i tb)
+> occurs i (TFunc (ta1:ta1s) tb)   = (occurs i ta1) || (occurs i (TFunc ta1s tb))
 > occurs i (TVar j)                = i == j
 > occurs _ _ = False
 
@@ -158,7 +162,7 @@ Substitution / environment manipulation
 > applySub [] t                    = t
 > applySub sub (TTuple ta tb)      = TTuple (applySub sub ta) (applySub sub tb)
 > applySub sub (TList t)           = TList (applySub sub t)
-> applySub sub (TFunc ta tb)       = TFunc (applySub sub ta) (applySub sub tb)
+> applySub sub (TFunc tas tb)      = TFunc [applySub sub ta | ta <- tas] (applySub sub tb)
 > applySub sub (TVar i)            = case lookup i sub of Just subbed -> subbed
 >                                                         Nothing     -> (TVar i)
 > applySub _ t                     = t
