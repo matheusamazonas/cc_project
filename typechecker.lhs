@@ -91,11 +91,24 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 
 
 
-
+> inferBlockT :: Environment -> [GramStmt] -> Type -> Maybe Environment
+> inferBlockT env [] _ = Just env
+> inferBlockT env (stmt:stmts) t = do
+>   env1 <- inferStmtT env stmt t
+>   inferBlockT env1 stmts t
 
 > inferStmtT :: Environment -> GramStmt -> Type -> Maybe Environment
-> inferStmtT env (GramIf cond tr fa) rettyp          = Nothing
-> inferStmtT env (GramWhile cond loop) rettyp        = Nothing
+> inferStmtT env (GramIf cond tr fa) rettyp          = do
+>   env1 <- inferExpT env cond TBool
+>   env2 <- inferBlockT (pushScope env1) tr (applySub (envSubs env1) rettyp)
+>   env3 <- inferBlockT (pushScope (popScope env2)) fa (applySub ((envSubs env1) ++ (envSubs env2)) rettyp)
+>   let sub = (envSubs env1) ++ (envSubs env2) ++ (envSubs env3)
+>   return (unique sub, envScopes (popScope env3), nextVar env3)
+> inferStmtT env (GramWhile cond loop) rettyp        = do
+>   env1 <- inferExpT env cond TBool
+>   env2 <- inferBlockT (pushScope env1) loop (applySub (envSubs env1) rettyp)
+>   let sub = (envSubs env1) ++ (envSubs env2)
+>   return (unique sub, envScopes (popScope env2), nextVar env2)
 > inferStmtT env (GramAttr var exp) rettyp           = do
 >   let fresh1 = fresh env
 >   env1 <- inferVarT (inc env) var fresh1
