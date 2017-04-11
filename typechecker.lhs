@@ -48,7 +48,7 @@ can be unified, otherwise returns Nothing
 >   let ntb1s = [applySub sub1 ntb1 | ntb1 <- tb1s]
 >   sub2 <- unify (TFunc nta1s ta2) (TFunc ntb1s tb2) p
 >   return (unique (sub1 ++ sub2))
-> unify _ _ p         = Left ("Can't unify3", p)
+> unify t1 t2 p = Left ("Can't unify types " ++ show t1 ++ show t2, p)
 
 
 
@@ -236,7 +236,7 @@ Scope checks
 > varType :: Environment -> GramId -> Either TypeError Type
 > varType (subs, scopes, nxt) (Id p iD) =
 >   case varId (subs, scopes, nxt) iD of
->     Nothing -> Left ("error on varType", p)
+>     Nothing -> Left ("Use of undeclared variable '" ++ iD ++ "'", p)
 >     Just i  ->
 >       case lookup i subs of
 >         Nothing -> Right (TVar i)
@@ -252,7 +252,7 @@ Scope checks
 > declareVar :: Environment -> GramId -> Either TypeError Environment
 > declareVar (subs, scope:scopes, nxt) (Id p i) =
 >   case lookup i scope of
->     Just _  -> Left ("error in declareVar", p)
+>     Just _  -> Left ("Variable '" ++ i ++ "' was declared multiple times.", p)
 >     Nothing -> Right (subs, ((i, nxt):scope):scopes, nxt+1)
 
 > pushScope :: Environment -> Environment
@@ -288,7 +288,7 @@ Substitution / environment manipulation
 
 
 > liftMaybe :: (Either TypeError Substitutions, [Scope], Int) -> SourcePos -> Either TypeError Environment
-> liftMaybe (Left _, _, _)         p = Left ("Error on liftMaybe", p)
+> liftMaybe (Left (e, p), _, _)         _ = Left (e,p)
 > liftMaybe (Right sub, scopes, i) p = Right (sub, scopes, i)
 
 > applySub :: Substitutions -> Type -> Type
