@@ -71,7 +71,7 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 >     Just exp -> inferExpT env exp t
 >     Nothing  -> 
 >       case unify TVoid t of
->         Just sub -> ((fst env) ++ sub, snd env)
+>         Just sub -> Just ((fst env) ++ sub, snd env)
 >         Nothing  -> Nothing
 > inferstmtT _ _                                     = Nothing
 
