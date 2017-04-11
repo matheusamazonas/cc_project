@@ -98,25 +98,25 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 >   inferBlockT env1 stmts t
 
 > inferStmtT :: Environment -> GramStmt -> Type -> Maybe Environment
-> inferStmtT env (GramIf cond tr fa) rettyp          = do
+> inferStmtT env (GramIf p cond tr fa) rettyp        = do
 >   env1 <- inferExpT env cond TBool
 >   env2 <- inferBlockT (pushScope env1) tr (applySub (envSubs env1) rettyp)
 >   env3 <- inferBlockT (pushScope (popScope env2)) fa (applySub ((envSubs env1) ++ (envSubs env2)) rettyp)
 >   let sub = (envSubs env1) ++ (envSubs env2) ++ (envSubs env3)
 >   return (unique sub, envScopes (popScope env3), nextVar env3)
-> inferStmtT env (GramWhile cond loop) rettyp        = do
+> inferStmtT env (GramWhile p cond loop) rettyp      = do
 >   env1 <- inferExpT env cond TBool
 >   env2 <- inferBlockT (pushScope env1) loop (applySub (envSubs env1) rettyp)
 >   let sub = (envSubs env1) ++ (envSubs env2)
 >   return (unique sub, envScopes (popScope env2), nextVar env2)
-> inferStmtT env (GramAttr var exp) rettyp           = do
+> inferStmtT env (GramAttr p var exp) rettyp         = do
 >   let fresh1 = fresh env
 >   env1 <- inferVarT (inc env) var fresh1
 >   env2 <- inferExpT env1 exp (applySub (envSubs env1) fresh1)
 >   return (unique ((envSubs env1) ++ (envSubs env2)), envScopes env2, nextVar env2)
 > inferStmtT env (GramStmtFunCall _) rettyp          = Nothing
 > inferStmtT env (GramFunVarDecl vardecl) rettyp     = inferVarDeclT env vardecl
-> inferStmtT env (GramReturn ret) rettyp             = 
+> inferStmtT env (GramReturn p ret) rettyp           = 
 >   case ret of
 >     Just exp -> inferExpT env exp rettyp
 >     Nothing  -> 
@@ -127,35 +127,35 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 
 
 > inferExpT :: Environment -> GramExp -> Type -> Maybe Environment
-> inferExpT env (GramBool _) t                       = liftMaybe (envSubs env +?+ unify TBool t, envScopes env, nextVar env)
-> inferExpT env (GramChar _) t                       = liftMaybe (envSubs env +?+ unify TChar t, envScopes env, nextVar env)
-> inferExpT env (GramNum _) t                        = liftMaybe (envSubs env +?+ unify TInt t, envScopes env, nextVar env)
-> inferExpT env (GramEmptyList) t                    = liftMaybe (envSubs env +?+ unify (TList (fresh env)) t, envScopes env, nextVar env + 1)
-> inferExpT env (GramBinary Minus e1 e2) t           = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary Plus e1 e2) t            = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary Times e1 e2) t           = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary Division e1 e2) t        = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary Mod e1 e2) t             = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary LessThan e1 e2) t        = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary LessOrEqual e1 e2) t     = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary GreaterThan e1 e2) t     = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary GreatherOrEqual e1 e2) t = inferBinExprT env e1 e2 t TInt TInt
-> inferExpT env (GramBinary LogicalOr e1 e2) t       = inferBinExprT env e1 e2 t TBool TBool
-> inferExpT env (GramBinary LogicalAnd e1 e2) t      = inferBinExprT env e1 e2 t TBool TBool
-> inferExpT env (GramBinary Equals e1 e2) t          = inferBinExprT (inc env) e1 e2 t (fresh env) TBool
-> inferExpT env (GramBinary Different e1 e2) t       = inferBinExprT (inc env) e1 e2 t (fresh env) TBool
-> inferExpT env (GramBinary ListConst e1 e2) t       = do
+> inferExpT env (GramBool p _) t                       = liftMaybe (envSubs env +?+ unify TBool t, envScopes env, nextVar env)
+> inferExpT env (GramChar p _) t                       = liftMaybe (envSubs env +?+ unify TChar t, envScopes env, nextVar env)
+> inferExpT env (GramNum p _) t                        = liftMaybe (envSubs env +?+ unify TInt t, envScopes env, nextVar env)
+> inferExpT env (GramEmptyList p) t                    = liftMaybe (envSubs env +?+ unify (TList (fresh env)) t, envScopes env, nextVar env + 1)
+> inferExpT env (GramBinary p Minus e1 e2) t           = inferBinExprT env e1 e2 t TInt TInt
+> inferExpT env (GramBinary p Plus e1 e2) t            = inferBinExprT env e1 e2 t TInt TInt
+> inferExpT env (GramBinary p Times e1 e2) t           = inferBinExprT env e1 e2 t TInt TInt
+> inferExpT env (GramBinary p Division e1 e2) t        = inferBinExprT env e1 e2 t TInt TInt
+> inferExpT env (GramBinary p Mod e1 e2) t             = inferBinExprT env e1 e2 t TInt TInt
+> inferExpT env (GramBinary p LessThan e1 e2) t        = inferBinExprT env e1 e2 t TInt TInt
+> inferExpT env (GramBinary p LessOrEqual e1 e2) t     = inferBinExprT env e1 e2 t TInt TInt
+> inferExpT env (GramBinary p GreaterThan e1 e2) t     = inferBinExprT env e1 e2 t TInt TInt
+> inferExpT env (GramBinary p GreatherOrEqual e1 e2) t = inferBinExprT env e1 e2 t TInt TInt
+> inferExpT env (GramBinary p LogicalOr e1 e2) t       = inferBinExprT env e1 e2 t TBool TBool
+> inferExpT env (GramBinary p LogicalAnd e1 e2) t      = inferBinExprT env e1 e2 t TBool TBool
+> inferExpT env (GramBinary p Equals e1 e2) t          = inferBinExprT (inc env) e1 e2 t (fresh env) TBool
+> inferExpT env (GramBinary p Different e1 e2) t       = inferBinExprT (inc env) e1 e2 t (fresh env) TBool
+> inferExpT env (GramBinary p ListConst e1 e2) t       = do
 >   let fresh1 = fresh env
 >   env1 <- inferExpT (inc env) e1 fresh1
 >   env2 <- inferExpT env1 e2 (applySub (envSubs env1) (TList fresh1))
 >   let sub = (envSubs env1) ++ (envSubs env2)
 >   res <- unify (applySub sub t) (applySub sub (TList fresh1))
 >   return (unique (sub ++ res), envScopes env2, nextVar env2)
-> inferExpT env (GramUnary Minus e) t                = inferUnExprT env e t TInt
-> inferExpT env (GramUnary LogicalNot e) t           = inferUnExprT env e t TBool
-> inferExpT env (GramExpId gv) t                     = inferVarT env gv t
-> inferExpT env (GramExpFunCall (GramFunCall i _)) t = Nothing
-> inferExpT env (GramExpTuple e1 e2) t               = do
+> inferExpT env (GramUnary p Minus e) t                = inferUnExprT env e t TInt
+> inferExpT env (GramUnary p LogicalNot e) t           = inferUnExprT env e t TBool
+> inferExpT env (GramExpId gv) t                       = inferVarT env gv t
+> inferExpT env (GramExpFunCall (GramFunCall i _)) t   = Nothing
+> inferExpT env (GramExpTuple p  e1 e2) t              = do
 >   let fresh1 = fresh env
 >   env1 <- inferExpT (inc env) e1 fresh1
 >   let fresh2 = fresh env1
@@ -173,10 +173,10 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 > inferFieldT env typ [] t = do
 >   sub <- unify typ t
 >   return (unique (envSubs env ++ sub), envScopes env, nextVar env)
-> inferFieldT env (TTuple typa _) [(First gf)] t = inferFieldT env typa gf t
-> inferFieldT env (TTuple _ typb) [(Second gf)] t = inferFieldT env typb gf t
-> inferFieldT env (TList typ) [(Head gf)] t = inferFieldT env typ gf t
-> inferFieldT env (TList typ) [(Tail gf)] t = inferFieldT env (TList typ) gf t
+> inferFieldT env (TTuple typa _) [(First p gf)] t = inferFieldT env typa gf t
+> inferFieldT env (TTuple _ typb) [(Second p gf)] t = inferFieldT env typb gf t
+> inferFieldT env (TList typ) [(Head p gf)] t = inferFieldT env typ gf t
+> inferFieldT env (TList typ) [(Tail p gf)] t = inferFieldT env (TList typ) gf t
 
 
 > inferBinExprT :: Environment -> GramExp -> GramExp -> Type -> Type -> Type -> Maybe Environment
@@ -198,11 +198,11 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 N.B. convertType misses GramIdType GramId, which defines (unused and forbidden) custom types..
 
 > convertType :: GramType -> Type
-> convertType (GramBasicType IntType) = TInt
-> convertType (GramBasicType BoolType) = TBool
-> convertType (GramBasicType CharType) = TChar
-> convertType (GramTupleType ta tb) = TTuple (convertType ta) (convertType tb)
-> convertType (GramListType t) = TList (convertType t)
+> convertType (GramBasicType p IntType) = TInt
+> convertType (GramBasicType p BoolType) = TBool
+> convertType (GramBasicType p CharType) = TChar
+> convertType (GramTupleType p ta tb) = TTuple (convertType ta) (convertType tb)
+> convertType (GramListType p t) = TList (convertType t)
 
 
 
