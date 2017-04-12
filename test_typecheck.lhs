@@ -29,10 +29,14 @@
 > testFunDecls :: IO ()
 > testFunDecls = test checkFunDecls " FunDecl"
 
+> testPrograms :: IO ()
+> testPrograms = test checkPrograms " Programs"
+
 > testAllCheck :: IO ()
 > testAllCheck = do
 >   testStmts
 >   testFunDecls
+>   testPrograms
 
 --------------------- Stmts ---------------------
 
@@ -76,7 +80,20 @@
 > funDeclTest10 = "foo(x, y) { if (x<y) { return x; } else { return y; } }"
 > funDeclTests = [funDeclTest1, funDeclTest2, funDeclTest3, funDeclTest4, funDeclTest5, funDeclTest6, funDeclTest7, funDeclTest8, funDeclTest9, funDeclTest10]
 
+--------------------- Programs ---------------------
 
+> checkProgram program = case program of
+>   Right ast -> inferProgT ast
+>   Left e -> error $ "Couldn't parse" ++ show e
 
+> checkPrograms = map checkProgram $ parseTests parseSPL programTests
 
+> example13 = "foo () { return 5; }"
+> example14 = "var v = 7; foo () { return 5; }"
+> example15 = "foo () { return 5; } var x = 7;"
+> example16 = "foo () { return 5; } var x = foo(); var y = foo();"
+> example17 = "var v = 7; foo () { return 5; } Int x = foo(); var y = foo();"
+> programTests = [example1]
+
+, example2, example3, example4, example5, example6, example7, example8, example9, example10, example11, example12]
 

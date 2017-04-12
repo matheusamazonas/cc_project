@@ -248,7 +248,14 @@ inferVarDeclT without loading from template used:
 > inferExpT env (GramUnary p Minus e) t                       = inferUnExprT env e t TInt p
 > inferExpT env (GramUnary p LogicalNot e) t                  = inferUnExprT env e t TBool p
 > inferExpT env (GramExpId gv) t                              = inferVarT env gv t
-> inferExpT env (GramExpFunCall (GramFunCall (Id p _) _)) t   = Left ("Cant infer", p)
+> inferExpT env (GramExpFunCall (GramFunCall (Id p i) args)) t   = do
+>   TFunc a1 r1 <- varType env (Id p i)
+>   if (length a1 /= argListLength args)
+>     then Left ("Wrong number of arguments.", p)
+>     else do
+>       env1 <- inferArgListType env args a1
+>       subs <- unify t r1 p 
+>       return (addSubsts subs env1, envScopes env, nextVar env)
 > inferExpT env (GramExpTuple p  e1 e2) t                     = do
 >   let fresh1 = fresh env
 >   env1 <- inferExpT (inc env) e1 fresh1
@@ -258,6 +265,8 @@ inferVarDeclT without loading from template used:
 >   res  <- unify (applySub sub t) (applySub sub (TTuple fresh1 fresh2)) p
 >   return (concatSubsts sub res, envScopes env2, nextVar env2)
 
+> argListLength :: GramArgList -> Int
+> argListLength (GramArgList ls) = length ls
 
 > inferVarT :: Environment -> GramVar -> Type -> Either TypeError Environment
 > inferVarT env (Var (Id p i) gf) t = do
@@ -290,6 +299,11 @@ inferVarDeclT without loading from template used:
 >   res <- unify (applySub sub texp) (applySub sub tcomp) p
 >   return (concatSubsts sub res, envScopes env1, nextVar env1)
 
+> inferArgListType :: Environment -> GramArgList -> [Type] -> Either TypeError Environment
+> inferArgListType env (GramArgList []) [] = return env
+> inferArgListType env (GramArgList ((GramActExpr e es):_)) (t:ts) = do
+>   env1 <- inferExpT env e t
+>   inferArgListType env1 (GramArgList es) ts
 
 N.B. convertType misses GramIdType GramId, which defines (unused and forbidden) custom types..
 
