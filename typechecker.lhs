@@ -64,27 +64,59 @@ let Right prog = parse "<program>"
 inferGramT ([],[[]],1) prog
 
 
+!! TODO !! inferDeclT give error when variable used as function (var x = 5; x())
+this is detectable because it's not a TFunc
+
+
 > inferGramT :: Environment -> [GramDecl] -> Either TypeError Environment
 > inferGramT env [] = Right env
 > inferGramT env (decl:decls) = do
 >   env1 <- inferDeclT env decl
 >   inferGramT env1 decls
 
+
 > inferDeclT :: Environment -> GramDecl -> Either TypeError Environment
 > inferDeclT env (GramDeclVar varDecl) = inferVarDeclT env varDecl
-> inferDeclT env (GramDeclFun (GramFuncDecl fid funcDeclTail)) = do
->   env1 <- initFunDeclSignT env fid funcDeclTail
->   let rettyp = TVar (nextVar env1 - 1)
->   env2 <- inferFunDeclT env1 fid funcDeclTail (applySub (envSubs env1) rettyp)
+> inferDeclT env (GramDeclFun (GramFuncDecl (Id p fid) funcDeclTail)) = do
+>   let Just funcid = varId env fid
+>   loaded <- loadFunDeclArgs (pushScope (envSubs env, envScopes env, funcid+1)) funcDeclTail
+>   let rettyp = TVar (nextVar loaded)
+>   let env1 = (envSubs env, envScopes loaded, nextVar env)
+>   env2 <- inferFunDeclT env1 (Id p fid) funcDeclTail (applySub (envSubs env1) rettyp)
 >   let sub = concatSubsts (envSubs env2) (envSubs env1)
 >   return $ popScope (sub, envScopes env2, nextVar env2)
+
+Old version assuming empty environment:
+  env1 <- initFunDeclSignT env fid funcDeclTail
+  let rettyp = TVar (nextVar env1 - 1)
+  env2 <- inferFunDeclT env1 fid funcDeclTail (applySub (envSubs env1) rettyp)
+  let sub = concatSubsts (envSubs env2) (envSubs env1)
+  return $ popScope (sub, envScopes env2, nextVar env2)
+
+> initGramSignT :: Environment -> [GramDecl] -> Either TypeError Environment
+> initGramSignT env [] = Right env
+> initGramSignT env (decl:decls) = do
+>   env1 <- initDeclSignT env decl
+>   initGramSignT env1 decls
+
+> initDeclSignT :: Environment -> GramDecl -> Either TypeError Environment
+> initDeclSignT env (GramDeclVar (GramVarDeclVar (GramVarDeclTail vid e))) = declareVar env vid
+> initDeclSignT env (GramDeclVar (GramVarDeclType gt (GramVarDeclTail vid e))) = do
+>   let varvar = nextVar env
+>   env1 <- declareVar env vid
+>   let varsub = [(varvar, convertType gt)]
+>   let sub = addSubsts varsub env1
+>   return (sub, envScopes env1, nextVar env1)
+> initDeclSignT env (GramDeclFun (GramFuncDecl fid funcDeclTail)) = do
+>   env1 <- initFunDeclSignT env fid funcDeclTail
+>   return $ popScope env1
 
 > initFunDeclSignT :: Environment -> GramId -> GramFuncDeclTail -> Either TypeError Environment
 > initFunDeclSignT env fid (GramFuncDeclTail fargs ftypes stmts) = do
 >   let funcvar = nextVar env
 >   env1 <- declareVar env fid
 >   let env2 = pushScope env1
->   env3 <- loadFunDeclArgs env2 (GramFuncDeclTail fargs ftypes stmts)
+>   env3 <- inferFunDeclArgs env2 (GramFuncDeclTail fargs ftypes stmts)
 >   let argtypes = sort [TVar (snd arg) | arg <- head (envScopes env3)]
 >   let rettyp = TVar (nextVar env3 - 1)
 >   let funcsub = [(funcvar, TFunc argtypes rettyp)]
@@ -96,21 +128,31 @@ inferGramT ([],[[]],1) prog
 >   env1 <- inferBlockT (pushScope env) stmts rettyp
 >   return $ popScope env1
 
+> loadFunDeclArgs :: Environment -> GramFuncDeclTail -> Either TypeError Environment
+> loadFunDeclArgs env (GramFuncDeclTail [] _ _) = Right env
+> loadFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id p vid) fargs] _ rettyp) = do
+>   let scope:scopes = envScopes env
+>   let arg = (vid, nextVar env)
+>   let env1 = (envSubs env, ((arg:scope):scopes), nextVar env + 1)
+>   loadFunDeclArgs env1 (GramFuncDeclTail fargs [] rettyp)
+> loadFunDeclArgs _ _ = Left("Error when loading function declaration args", newPos "test_file" 1 1)
+
+
 > checkNumArgs :: [GramFArgs] -> [GramFTypes] -> Bool
 > checkNumArgs [] [] = True
 > checkNumArgs [GramFArgsId _ fargs] [GramFTypes _ ftypes] = checkNumArgs fargs ftypes
 > checkNumArgs _ _ = False
 
-> loadFunDeclArgs :: Environment -> GramFuncDeclTail -> Either TypeError Environment
-> loadFunDeclArgs env (GramFuncDeclTail [] [] _) = Right (inc env)
-> loadFunDeclArgs env (GramFuncDeclTail [] [GramFunType [] rettyp] _) = Right (inc env1)
+> inferFunDeclArgs :: Environment -> GramFuncDeclTail -> Either TypeError Environment
+> inferFunDeclArgs env (GramFuncDeclTail [] [] _) = Right (inc env)
+> inferFunDeclArgs env (GramFuncDeclTail [] [GramFunType [] rettyp] _) = Right (inc env1)
 >   where retType (GramRetType t) = convertType t
 >         retType (GramVoidType _) = TVoid
 >         env1 = (concatSubsts (envSubs env) [(nextVar env, retType rettyp)], envScopes env, nextVar env)
-> loadFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id p vid) fargs] [] rettyp) = do
+> inferFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id p vid) fargs] [] rettyp) = do
 >   env1 <- declareVar env (Id p vid)
->   loadFunDeclArgs env1 (GramFuncDeclTail fargs [] rettyp)
-> loadFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id p vid) fargs] [GramFunType [GramFTypes gt ftypes] r1] r2) 
+>   inferFunDeclArgs env1 (GramFuncDeclTail fargs [] rettyp)
+> inferFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id p vid) fargs] [GramFunType [GramFTypes gt ftypes] r1] r2) 
 >   | not (checkNumArgs fargs ftypes) = Left ("Number of arguments doesnt match.", p)
 >   | otherwise = do
 >       let t = convertType gt
@@ -118,21 +160,22 @@ inferGramT ([],[[]],1) prog
 >       var  <- varType env1 (Id p vid)
 >       sub1 <- unify var t p
 >       let env2 = (addSubsts sub1 env1, envScopes env1, nextVar env1)
->       loadFunDeclArgs env2 (GramFuncDeclTail fargs [GramFunType ftypes r1] r2)
-> loadFunDeclArgs _ _ = Left("Error when loading function declaration args", newPos "test_file" 1 1)
+>       inferFunDeclArgs env2 (GramFuncDeclTail fargs [GramFunType ftypes r1] r2)
+> inferFunDeclArgs _ _ = Left("Error when loading function declaration args", newPos "test_file" 1 1)
+
+inferVarDeclT without loading from template used:
+  env1 <- declareVar env vid
 
 > inferVarDeclT :: Environment -> GramVarDecl -> Either TypeError Environment
 > inferVarDeclT env (GramVarDeclVar (GramVarDeclTail vid e)) = do
->   env1 <- declareVar env vid
->   var  <- varType env1 vid
->   inferExpT env1 e var
+>   var  <- varType env vid
+>   inferExpT env e var
 > inferVarDeclT env (GramVarDeclType gt (GramVarDeclTail (Id p i) e)) = do
 >   let t = convertType gt
->   env1 <- declareVar env (Id p i)
->   var  <- varType env1 (Id p i)
->   sub1 <- unify var t p
->   let env2 = (addSubsts sub1 env1, envScopes env1, nextVar env1)
->   inferExpT env2 e (applySub (envSubs env2) t)
+>   var  <- varType env (Id p i)
+>   sub <- unify var t p
+>   let env1 = (addSubsts sub env, envScopes env, nextVar env)
+>   inferExpT env1 e (applySub (envSubs env1) t)
 
 
 
@@ -339,8 +382,10 @@ Substitution / environment manipulation
 > resolveSubsts _ []                     = []
 > resolveSubsts envSubs ((i, TVar j) : subs) = 
 >   case lookup j envSubs of
->     Just subbed -> resolveSubsts envSubs ((i, subbed) : subs)
 >     Nothing     -> (i, TVar j) : (resolveSubsts envSubs subs)
+>     Just subbed -> case () of
+>       () | subbed == TVar i -> (i, TVar i) : (resolveSubsts envSubs subs)
+>          | otherwise        -> resolveSubsts envSubs ((i, subbed) : subs)
 > resolveSubsts envSubs (sub : subs) = sub : (resolveSubsts envSubs subs)
 
 > concatSubsts :: Substitutions -> Substitutions -> Substitutions
