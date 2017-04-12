@@ -48,7 +48,7 @@ can be unified, otherwise returns Nothing
 >   let ntb1s = [applySub sub1 ntb1 | ntb1 <- tb1s]
 >   sub2 <- unify (TFunc nta1s ta2) (TFunc ntb1s tb2) p
 >   return $ concatSubsts sub1 sub2
-> unify t1 t2 p = Left ("Can't unify types " ++ show t1 ++ show t2, p)
+> unify t1 t2 p = Left ("Can't unify types " ++ show t1 ++ " and " ++ show t2, p)
 
 
 
@@ -142,7 +142,7 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 >   env2 <- inferBlockT (pushScope env1) tr (applySub (envSubs env1) rettyp)
 >   env3 <- inferBlockT (pushScope (popScope env2)) fa (applySub (addSubsts (envSubs env1) env2) rettyp)
 >   let sub = addSubsts (addSubsts (envSubs env1) env2) env3
->   return (unique sub, envScopes (popScope env3), nextVar env3)
+>   return (sub, envScopes (popScope env3), nextVar env3)
 > inferStmtT env (GramWhile p cond loop) rettyp      = do
 >   env1 <- inferExpT env cond TBool
 >   env2 <- inferBlockT (pushScope env1) loop (applySub (envSubs env1) rettyp)
@@ -176,10 +176,10 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 > inferExpT env (GramBinary p Times e1 e2) t           = inferBinExprT env e1 e2 t TInt TInt p
 > inferExpT env (GramBinary p Division e1 e2) t        = inferBinExprT env e1 e2 t TInt TInt p
 > inferExpT env (GramBinary p Mod e1 e2) t             = inferBinExprT env e1 e2 t TInt TInt p
-> inferExpT env (GramBinary p LessThan e1 e2) t        = inferBinExprT env e1 e2 t TInt TInt p
-> inferExpT env (GramBinary p LessOrEqual e1 e2) t     = inferBinExprT env e1 e2 t TInt TInt p
-> inferExpT env (GramBinary p GreaterThan e1 e2) t     = inferBinExprT env e1 e2 t TInt TInt p
-> inferExpT env (GramBinary p GreatherOrEqual e1 e2) t = inferBinExprT env e1 e2 t TInt TInt p
+> inferExpT env (GramBinary p LessThan e1 e2) t        = inferBinExprT env e1 e2 t TInt TBool p
+> inferExpT env (GramBinary p LessOrEqual e1 e2) t     = inferBinExprT env e1 e2 t TInt TBool p
+> inferExpT env (GramBinary p GreaterThan e1 e2) t     = inferBinExprT env e1 e2 t TInt TBool p
+> inferExpT env (GramBinary p GreatherOrEqual e1 e2) t = inferBinExprT env e1 e2 t TInt TBool p
 > inferExpT env (GramBinary p LogicalOr e1 e2) t       = inferBinExprT env e1 e2 t TBool TBool p
 > inferExpT env (GramBinary p LogicalAnd e1 e2) t      = inferBinExprT env e1 e2 t TBool TBool p
 > inferExpT env (GramBinary p Equals e1 e2) t          = inferBinExprT (inc env) e1 e2 t (fresh env) TBool p
