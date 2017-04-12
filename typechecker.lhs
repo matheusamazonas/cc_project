@@ -208,7 +208,9 @@ inferVarDeclT without loading from template used:
 >   env2 <- inferExpT env1 exp (applySub (envSubs env1) fresh1)
 >   return (addSubsts (envSubs env2) env1, envScopes env2, nextVar env2)
 > inferStmtT env (GramStmtFunCall (GramFunCall (Id p _) _)) rettyp = Left ("Error on infetStmt", p)
-> inferStmtT env (GramFunVarDecl vardecl) rettyp     = inferVarDeclT env vardecl
+> inferStmtT env (GramFunVarDecl vardecl) rettyp     = do
+>   env1 <- initDeclSignT env (GramDeclVar vardecl)
+>   inferVarDeclT env1 vardecl
 > inferStmtT env (GramReturn p ret) rettyp           = 
 >   case ret of
 >     Just exp -> inferExpT env exp rettyp
