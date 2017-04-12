@@ -243,6 +243,11 @@ Needs nesting:
 > exampl12Case = lexer nP example12
 > testExample12 = putStrLn $ show $ parseSPL exampl12Case
 
+> tcExample0 = "if(1<4) { return 1; } else { return 3; }"
+> tcExampleCase0 = lexer nP tcExample0
+> testTCExample0 = case parseStmt tcExampleCase0 of
+>   Right ast -> inferStmtT ([], [[]], 1) ast TInt
+
 > tcExample1 = "if(True) { var x = 5; var z = x+1; return z; } else { }"
 > tcExampleCase1 = lexer nP tcExample1
 > testTCExample1 = case parseStmt tcExampleCase1 of
@@ -276,6 +281,11 @@ Needs nesting:
 > tcExample7 = "foo(x,y,z) { return x:y:z:1:[]; }"
 > tcExampleCase7 = lexer nP tcExample7
 > testTCExample7 = case parseDecl tcExampleCase7 of
+>   Right ast -> inferDeclT ([], [[]], 1) ast 
+
+> tcExample8 = "foo(x) :: Int -> Int { if (1<2) { return x; } else { return 1; } }"
+> tcExampleCase8 = lexer nP tcExample8
+> testTCExample8 = case parseDecl tcExampleCase8 of
 >   Right ast -> inferDeclT ([], [[]], 1) ast 
 
 
