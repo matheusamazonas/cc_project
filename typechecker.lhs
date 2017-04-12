@@ -328,8 +328,17 @@ Substitution / environment manipulation
 >                                                         Nothing     -> (TVar i)
 > applySub _ t                     = t
 
+> resolveSubsts :: Substitutions -> Substitutions -> Substitutions
+> resolveSubsts _ []                     = []
+> resolveSubsts envSubs ((i, TVar j) : subs) = 
+>   case lookup j envSubs of
+>     Just subbed -> resolveSubsts envSubs ((i, subbed) : subs)
+>     Nothing     -> (i, TVar j) : (resolveSubsts envSubs subs)
+> resolveSubsts envSubs (sub : subs) = sub : (resolveSubsts envSubs subs)
+
 > concatSubsts :: Substitutions -> Substitutions -> Substitutions
-> concatSubsts old new = unique $ new ++ map (\(id, t) -> (id, applySub new t)) old
+> concatSubsts old new = resolveSubsts concat $ unique $ concat
+>   where concat = old ++ new
 
 > addSubsts :: Substitutions -> Environment -> Substitutions
 > addSubsts subs (envSubs, s, i) = concatSubsts envSubs subs
