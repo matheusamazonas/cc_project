@@ -2,6 +2,7 @@
 
 > import Parser 
 > import Grammar
+> import TypeChecker
 > import Lexer (lexer)
 > import Text.Parsec.Combinator (eof)
 > import Text.Parsec.Pos (SourcePos, newPos)
@@ -242,6 +243,43 @@ Needs nesting:
 > exampl12Case = lexer nP example12
 > testExample12 = putStrLn $ show $ parseSPL exampl12Case
 
+> tcExample1 = "if(True) { var x = 5; var z = x+1; return z; } else { }"
+> tcExampleCase1 = lexer nP tcExample1
+> testTCExample1 = case parseStmt tcExampleCase1 of
+>   Right ast -> inferStmtT ([], [[]], 1) ast TInt
+
+> tcExample2 = "foo() { return 1; }"
+> tcExampleCase2 = lexer nP tcExample2
+> testTCExample2 = case parseDecl tcExampleCase2 of
+>   Right ast -> inferDeclT ([], [[]], 1) ast 
+
+> tcExample3 = "foo() :: -> Int { return 1; }"
+> tcExampleCase3 = lexer nP tcExample3
+> testTCExample3 = case parseDecl tcExampleCase3 of
+>   Right ast -> inferDeclT ([], [[]], 1) ast 
+
+> tcExample4 = "foo(x) { return x+1; }"
+> tcExampleCase4 = lexer nP tcExample4
+> testTCExample4 = case parseDecl tcExampleCase4 of
+>   Right ast -> inferDeclT ([], [[]], 1) ast 
+
+> tcExample5 = "foo(x) :: Int -> Int { return x+1; }"
+> tcExampleCase5 = lexer nP tcExample5
+> testTCExample5 = case parseDecl tcExampleCase5 of
+>   Right ast -> inferDeclT ([], [[]], 1) ast 
+
+> tcExample6 = "foo(x) { return x; return 1; }"
+> tcExampleCase6 = lexer nP tcExample6
+> testTCExample6 = case parseDecl tcExampleCase6 of
+>   Right ast -> inferDeclT ([], [[]], 1) ast 
+
+> tcExample7 = "foo(x,y,z) { return x:y:z:1:[]; }"
+> tcExampleCase7 = lexer nP tcExample7
+> testTCExample7 = case parseDecl tcExampleCase7 of
+>   Right ast -> inferDeclT ([], [[]], 1) ast 
+
+
+parseSPL $ lexer nP example
 
 Example8 doesn't follow the grammar
 
