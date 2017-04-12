@@ -27,7 +27,9 @@ Returns Just a list of substitutions ((TVar) Int -> Type) if the two types
 can be unified, otherwise returns Nothing
 
 > unify :: Type -> Type -> SourcePos -> Either TypeError Substitutions
-> unify TInt TInt   _  = Right []
+> unify TVoid TVoid _  = Right []
+> unify TChar TChar _  = Right []
+> unify TInt TInt _    = Right []
 > unify TBool TBool _  = Right []
 > unify (TVar i) t p
 >   | t == (TVar i)    = Right []
@@ -53,27 +55,14 @@ can be unified, otherwise returns Nothing
 
 
 
-Type inference algorithm M
+Type checking and inference
 
-Starts with an environment, an AST and a suggested type (which may be a type variable).
-Returns an Environment if a possible set of type variable substitutions has been found,
-binding TVar 0 to the whole expression's type, or returns Nothing if none could be found.
+Test with:
 
-to test something's type, call with and check binding for TVar 0:
-parse = \x -> parseSPL $ lexer nP x
-let Right [GramDeclFun (GramFuncDecl _ exin)] = parse ex
-inferBlaT ([],[[]],1) exin (TVar 0)
+parse = \x -> Test.parseSPL $ lexer (newPos "stdin" 1 1) x
+let Right prog = parse "<program>"
+inferGramT ([],[[]],1) prog
 
-To implement:
-- functions (see slides for their M-algorithm version)
-
-These require changes to the Environment structure; either additional items in the tuple,
-or a different structure for Substitutions.
-
-The below methods have been tested on small examples input as ASTs, not code -> type checking yet.
-
-
-  let sub = unique ((envSubs env1) ++ (envSubs env2))
 
 > inferGramT :: Environment -> [GramDecl] -> Either TypeError Environment
 > inferGramT env [] = Right env
@@ -86,10 +75,10 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 > inferDeclT env (GramDeclFun (GramFuncDecl fid funcDeclTail)) = do
 >   let funcvar = nextVar env
 >   env1 <- declareVar env fid
->   let rettyp = fresh env1
->   let env2 = pushScope (inc env1)
+>   let env2 = pushScope env1
 >   env3 <- loadFunDeclArgs env2 funcDeclTail
 >   let argtypes = sort [TVar (snd arg) | arg <- head (envScopes env3)]
+>   let rettyp = TVar (nextVar env3 - 1)
 >   let funcsub = [(funcvar, TFunc argtypes rettyp)]
 >   let sub = concatSubsts (addSubsts (envSubs env2) env3) funcsub
 >   env4 <- inferFunDeclT env3 fid funcDeclTail (applySub sub rettyp)
@@ -102,20 +91,17 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 >   env1 <- inferBlockT (pushScope env) stmts rettyp
 >   return $ popScope env1
 
-   let argtypes = map (applySub (envSubs env1)) $ sort [TVar (snd arg) | arg <- head (scopes env1)]
-   let functyp = TFunc argtypes (applySub (envSubs env1) rettyp)
-   let funcvar = nextVar env1
-   env2 <- declareVar (popScope env1) fid
-   return (addSubsts [(funcvar, functyp)] env2, envScopes env2, nextVar env2)
-
 > checkNumArgs :: [GramFArgs] -> [GramFTypes] -> Bool
 > checkNumArgs [] [] = True
 > checkNumArgs [GramFArgsId _ fargs] [GramFTypes _ ftypes] = checkNumArgs fargs ftypes
 > checkNumArgs _ _ = False
 
 > loadFunDeclArgs :: Environment -> GramFuncDeclTail -> Either TypeError Environment
-> loadFunDeclArgs env (GramFuncDeclTail [] [] _) = Right env
-> loadFunDeclArgs env (GramFuncDeclTail [] [GramFunType [] _] _) = Right env
+> loadFunDeclArgs env (GramFuncDeclTail [] [] _) = Right (inc env)
+> loadFunDeclArgs env (GramFuncDeclTail [] [GramFunType [] rettyp] _) = Right (inc env1)
+>   where retType (GramRetType t) = convertType t
+>         retType (GramVoidType _) = TVoid
+>         env1 = (concatSubsts (envSubs env) [(nextVar env, retType rettyp)], envScopes env, nextVar env)
 > loadFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id p vid) fargs] [] rettyp) = do
 >   env1 <- declareVar env (Id p vid)
 >   loadFunDeclArgs env1 (GramFuncDeclTail fargs [] rettyp)
