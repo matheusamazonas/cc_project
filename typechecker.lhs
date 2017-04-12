@@ -207,7 +207,13 @@ inferVarDeclT without loading from template used:
 >   env1 <- inferVarT (inc env) var fresh1
 >   env2 <- inferExpT env1 exp (applySub (envSubs env1) fresh1)
 >   return (addSubsts (envSubs env2) env1, envScopes env2, nextVar env2)
-> inferStmtT env (GramStmtFunCall (GramFunCall (Id p _) _)) rettyp = Left ("Error on infetStmt", p)
+> inferStmtT env (GramStmtFunCall (GramFunCall (Id p i) args)) rettyp = do
+>   TFunc a1 r1 <- varType env (Id p i)
+>   if (length a1 /= argListLength args)
+>     then Left ("Wrong number of arguments.", p)
+>     else do
+>       env1 <- inferArgListType env args a1
+>       return env1
 > inferStmtT env (GramFunVarDecl vardecl) rettyp     = inferVarDeclT env vardecl
 > inferStmtT env (GramReturn p ret) rettyp           = 
 >   case ret of
