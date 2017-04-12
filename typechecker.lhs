@@ -68,6 +68,11 @@ inferGramT ([],[[]],1) prog
 this is detectable because it's not a TFunc
 
 
+> inferProgT :: [GramDecl] -> Either TypeError Environment
+> inferProgT prog = do
+>   env <- initGramSignT ([],[[]],0) prog
+>   inferGramT env prog
+
 > inferGramT :: Environment -> [GramDecl] -> Either TypeError Environment
 > inferGramT env [] = Right env
 > inferGramT env (decl:decls) = do
