@@ -59,7 +59,9 @@ Returns an Environment if a possible set of type variable substitutions has been
 binding TVar 0 to the whole expression's type, or returns Nothing if none could be found.
 
 to test something's type, call with and check binding for TVar 0:
-inferBlaT ([],[[]],1) (<expression>) (TVar 0)
+parse = \x -> parseSPL $ lexer nP x
+let Right [GramDeclFun (GramFuncDecl _ exin)] = parse ex
+inferBlaT ([],[[]],1) exin (TVar 0)
 
 To implement:
 - functions (see slides for their M-algorithm version)
@@ -72,20 +74,45 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 
 
 
-inferFunDeclT :: Environment -> GramId -> GramFuncDeclTail -> Type -> Maybe Environment
-inferFunDeclT env fid (GramFuncDeclTail [] [] stmts) rettyp = do
-  env1 <- inferBlockT (pushScope env) stmts rettyp
-  return (popScope env1)
-
-
-
-
-
-
 
 > inferDeclT :: Environment -> GramDecl -> Maybe Environment
-> inferDeclT env (GramDeclFun (GramFuncDecl id funcDeclTail)) = Nothing
+> inferDeclT env (GramDeclFun (GramFuncDecl (Id _ vid) funcDeclTail)) = do
+>   let rettyp = fresh env
+>   let env1 = pushScope (inc env)
+>   env2 <- loadFunDeclArgs env1 funcDeclTail
+>   let sub = unique ((envSubs env1) ++ (envSubs env2))
+>   env3 <- inferFunDeclT env2 vid funcDeclTail (applySub sub rettyp)
+>   return (popScope env3)
 > inferDeclT env (GramDeclVar varDecl) = inferVarDeclT env varDecl
+
+
+> inferFunDeclT :: Environment -> String -> GramFuncDeclTail -> Type -> Maybe Environment
+> inferFunDeclT env fid (GramFuncDeclTail [] [] stmts) rettyp = do
+>   env1 <- inferBlockT (pushScope env) stmts rettyp
+>   return (popScope env1)
+
+> checkNumArgs :: [GramFArgs] -> [GramFTypes] -> Bool
+> checkNumArgs [] [] = True
+> checkNumArgs [GramFArgsId _ fargs] [GramFTypes _ ftypes] = checkNumArgs fargs ftypes
+> checkNumArgs _ _ = False
+
+> loadFunDeclArgs :: Environment -> GramFuncDeclTail -> Maybe Environment
+> loadFunDeclArgs env (GramFuncDeclTail [] [] _) = Just env
+> loadFunDeclArgs env (GramFuncDeclTail [] [GramFunType [] _] _) = Just env
+> loadFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id _ vid) fargs] [] rettyp) = do
+>   env1 <- declareVar env vid
+>   loadFunDeclArgs env1 (GramFuncDeclTail fargs [] rettyp)
+> loadFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id _ vid) fargs] [GramFunType [GramFTypes gt ftypes] r1] r2) 
+>   | not (checkNumArgs fargs ftypes) = Nothing
+>   | otherwise = do
+>       let t = convertType gt
+>       env1 <- declareVar env vid
+>       var  <- varType env1 vid
+>       sub1 <- unify var t
+>       let env2 = (unique (envSubs env1 ++ sub1), envScopes env1, nextVar env1)
+>       loadFunDeclArgs env2 (GramFuncDeclTail fargs [GramFunType ftypes r1] r2)
+
+
 
 > inferVarDeclT :: Environment -> GramVarDecl -> Maybe Environment
 > inferVarDeclT env (GramVarDeclVar (GramVarDeclTail (Id _ vid) e)) = do
