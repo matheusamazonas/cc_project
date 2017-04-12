@@ -265,8 +265,12 @@ inferVarDeclT without loading from template used:
 >   res  <- unify (applySub sub t) (applySub sub (TTuple fresh1 fresh2)) p
 >   return (concatSubsts sub res, envScopes env2, nextVar env2)
 
+GramArgList [GramActArgs]
+GramActExpr GramExp [GramActArgs]
+
 > argListLength :: GramArgList -> Int
-> argListLength (GramArgList ls) = length ls
+> argListLength (GramArgList []) = 0
+> argListLength (GramArgList ((GramActExpr _ args):lst)) = 1 + argListLength (GramArgList args)
 
 > inferVarT :: Environment -> GramVar -> Type -> Either TypeError Environment
 > inferVarT env (Var (Id p i) gf) t = do
