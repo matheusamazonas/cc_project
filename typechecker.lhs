@@ -33,11 +33,11 @@ can be unified, otherwise returns Nothing
 > unify TBool TBool _  = Right []
 > unify (TVar i) t p
 >   | t == (TVar i)    = Right []
->   | occurs i t       = Left ("Can't unify1", p)
+>   | occurs i t       = Left ("Recursive type detected", p)
 >   | otherwise        = Right [(i, t)]
 > unify t (TVar i) p
 >   | t == (TVar i)    = Right []
->   | occurs i t       = Left ("Can't unify2", p)
+>   | occurs i t       = Left ("Recursive type detected", p)
 >   | otherwise        = Right [(i, t)]
 > unify (TList ta) (TList tb) p = unify ta tb p
 > unify (TTuple ta1 ta2) (TTuple tb1 tb2) p = do
@@ -73,18 +73,23 @@ inferGramT ([],[[]],1) prog
 > inferDeclT :: Environment -> GramDecl -> Either TypeError Environment
 > inferDeclT env (GramDeclVar varDecl) = inferVarDeclT env varDecl
 > inferDeclT env (GramDeclFun (GramFuncDecl fid funcDeclTail)) = do
+>   env1 <- initFunDeclSignT env fid funcDeclTail
+>   let rettyp = TVar (nextVar env1 - 1)
+>   env2 <- inferFunDeclT env1 fid funcDeclTail (applySub (envSubs env1) rettyp)
+>   let sub = concatSubsts (envSubs env2) (envSubs env1)
+>   return $ popScope (sub, envScopes env2, nextVar env2)
+
+> initFunDeclSignT :: Environment -> GramId -> GramFuncDeclTail -> Either TypeError Environment
+> initFunDeclSignT env fid (GramFuncDeclTail fargs ftypes stmts) = do
 >   let funcvar = nextVar env
 >   env1 <- declareVar env fid
 >   let env2 = pushScope env1
->   env3 <- loadFunDeclArgs env2 funcDeclTail
+>   env3 <- loadFunDeclArgs env2 (GramFuncDeclTail fargs ftypes stmts)
 >   let argtypes = sort [TVar (snd arg) | arg <- head (envScopes env3)]
 >   let rettyp = TVar (nextVar env3 - 1)
 >   let funcsub = [(funcvar, TFunc argtypes rettyp)]
 >   let sub = concatSubsts (addSubsts (envSubs env2) env3) funcsub
->   env4 <- inferFunDeclT env3 fid funcDeclTail (applySub sub rettyp)
->   let sub2 = concatSubsts (envSubs env4) sub
->   return $ popScope (sub2, envScopes env4, nextVar env4)
-
+>   return (sub, envScopes env3, nextVar env3)
 
 > inferFunDeclT :: Environment -> GramId -> GramFuncDeclTail -> Type -> Either TypeError Environment
 > inferFunDeclT env fid (GramFuncDeclTail _ _ stmts) rettyp = do
@@ -204,6 +209,7 @@ inferGramT ([],[[]],1) prog
 >   let sub = addSubsts (envSubs env2) env1
 >   res  <- unify (applySub sub t) (applySub sub (TTuple fresh1 fresh2)) p
 >   return (concatSubsts sub res, envScopes env2, nextVar env2)
+
 
 > inferVarT :: Environment -> GramVar -> Type -> Either TypeError Environment
 > inferVarT env (Var (Id p i) gf) t = do
