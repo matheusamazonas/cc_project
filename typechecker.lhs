@@ -217,7 +217,6 @@ inferVarDeclT without loading from template used:
 >     else do
 >       env1 <- inferArgListType env args a1
 >       return env1
-> inferStmtT env (GramFunVarDecl vardecl) rettyp     = inferVarDeclT env vardecl
 > inferStmtT env (GramReturn p ret) rettyp           = 
 >   case ret of
 >     Just exp -> inferExpT env exp rettyp
