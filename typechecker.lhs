@@ -75,8 +75,8 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 
 
 
-> inferDeclT :: Environment -> GramDecl -> Maybe Environment
-> inferDeclT env (GramDeclFun (GramFuncDecl (Id _ vid) funcDeclTail)) = do
+> inferDeclT :: Environment -> GramDecl -> Either TypeError Environment
+> inferDeclT env (GramDeclFun (GramFuncDecl (Id p vid) funcDeclTail)) = do
 >   let rettyp = fresh env
 >   let env1 = pushScope (inc env)
 >   env2 <- loadFunDeclArgs env1 funcDeclTail
@@ -86,7 +86,7 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 > inferDeclT env (GramDeclVar varDecl) = inferVarDeclT env varDecl
 
 
-> inferFunDeclT :: Environment -> String -> GramFuncDeclTail -> Type -> Maybe Environment
+> inferFunDeclT :: Environment -> String -> GramFuncDeclTail -> Type -> Either TypeError Environment
 > inferFunDeclT env fid (GramFuncDeclTail [] [] stmts) rettyp = do
 >   env1 <- inferBlockT (pushScope env) stmts rettyp
 >   return (popScope env1)
@@ -96,19 +96,19 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 > checkNumArgs [GramFArgsId _ fargs] [GramFTypes _ ftypes] = checkNumArgs fargs ftypes
 > checkNumArgs _ _ = False
 
-> loadFunDeclArgs :: Environment -> GramFuncDeclTail -> Maybe Environment
-> loadFunDeclArgs env (GramFuncDeclTail [] [] _) = Just env
-> loadFunDeclArgs env (GramFuncDeclTail [] [GramFunType [] _] _) = Just env
-> loadFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id _ vid) fargs] [] rettyp) = do
->   env1 <- declareVar env vid
+> loadFunDeclArgs :: Environment -> GramFuncDeclTail -> Either TypeError Environment
+> loadFunDeclArgs env (GramFuncDeclTail [] [] _) = Right env
+> loadFunDeclArgs env (GramFuncDeclTail [] [GramFunType [] _] _) = Right env
+> loadFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id p vid) fargs] [] rettyp) = do
+>   env1 <- declareVar env (Id p vid)
 >   loadFunDeclArgs env1 (GramFuncDeclTail fargs [] rettyp)
-> loadFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id _ vid) fargs] [GramFunType [GramFTypes gt ftypes] r1] r2) 
->   | not (checkNumArgs fargs ftypes) = Nothing
+> loadFunDeclArgs env (GramFuncDeclTail [GramFArgsId (Id p vid) fargs] [GramFunType [GramFTypes gt ftypes] r1] r2) 
+>   | not (checkNumArgs fargs ftypes) = Left ("Number of arguments doesnt match.", p)
 >   | otherwise = do
 >       let t = convertType gt
->       env1 <- declareVar env vid
->       var  <- varType env1 vid
->       sub1 <- unify var t
+>       env1 <- declareVar env (Id p vid)
+>       var  <- varType env1 (Id p vid)
+>       sub1 <- unify var t p
 >       let env2 = (unique (envSubs env1 ++ sub1), envScopes env1, nextVar env1)
 >       loadFunDeclArgs env2 (GramFuncDeclTail fargs [GramFunType ftypes r1] r2)
 
