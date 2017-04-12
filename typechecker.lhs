@@ -1,6 +1,7 @@
 > module TypeChecker where
 
 > import Data.Set (toList, fromList)
+> import Data.List (sort)
 > import Grammar
 > import Text.Parsec.Pos (newPos, SourcePos)
 > import Token 
@@ -48,7 +49,7 @@ can be unified, otherwise returns Nothing
 >   let ntb1s = [applySub sub1 ntb1 | ntb1 <- tb1s]
 >   sub2 <- unify (TFunc nta1s ta2) (TFunc ntb1s tb2) p
 >   return $ concatSubsts sub1 sub2
-> unify t1 t2 p = Left ("Can't unify types " ++ show t1 ++ show t2, p)
+> unify t1 t2 p = Left ("Can't unify types " ++ show t1 ++ " " ++ show t2, p)
 
 
 
@@ -77,21 +78,31 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 
 
 > inferDeclT :: Environment -> GramDecl -> Either TypeError Environment
-> inferDeclT env (GramDeclFun (GramFuncDecl (Id p vid) funcDeclTail)) = do
->   let rettyp = fresh env
->   let env1 = pushScope (inc env)
->   env2 <- loadFunDeclArgs env1 funcDeclTail
->   let sub = addSubsts (envSubs env1) env2
->   env3 <- inferFunDeclT env2 vid funcDeclTail (applySub sub rettyp)
->   let sub2 = concatSubsts (envSubs env3) sub
->   return $ (sub2, envScopes env3, nextVar env3)
 > inferDeclT env (GramDeclVar varDecl) = inferVarDeclT env varDecl
+> inferDeclT env (GramDeclFun (GramFuncDecl fid funcDeclTail)) = do
+>   let funcvar = nextVar env
+>   env1 <- declareVar env fid
+>   let rettyp = fresh env1
+>   let env2 = pushScope (inc env1)
+>   env3 <- loadFunDeclArgs env2 funcDeclTail
+>   let argtypes = sort [TVar (snd arg) | arg <- head (envScopes env3)]
+>   let funcsub = [(funcvar, TFunc argtypes rettyp)]
+>   let sub = concatSubsts (addSubsts (envSubs env2) env3) funcsub
+>   env4 <- inferFunDeclT env3 fid funcDeclTail (applySub sub rettyp)
+>   let sub2 = concatSubsts (envSubs env4) sub
+>   return $ popScope (sub2, envScopes env4, nextVar env4)
 
 
-> inferFunDeclT :: Environment -> String -> GramFuncDeclTail -> Type -> Either TypeError Environment
+> inferFunDeclT :: Environment -> GramId -> GramFuncDeclTail -> Type -> Either TypeError Environment
 > inferFunDeclT env fid (GramFuncDeclTail _ _ stmts) rettyp = do
 >   env1 <- inferBlockT (pushScope env) stmts rettyp
->   return (popScope env1)
+>   return $ popScope env1
+
+   let argtypes = map (applySub (envSubs env1)) $ sort [TVar (snd arg) | arg <- head (scopes env1)]
+   let functyp = TFunc argtypes (applySub (envSubs env1) rettyp)
+   let funcvar = nextVar env1
+   env2 <- declareVar (popScope env1) fid
+   return (addSubsts [(funcvar, functyp)] env2, envScopes env2, nextVar env2)
 
 > checkNumArgs :: [GramFArgs] -> [GramFTypes] -> Bool
 > checkNumArgs [] [] = True
@@ -337,8 +348,9 @@ Substitution / environment manipulation
 > resolveSubsts envSubs (sub : subs) = sub : (resolveSubsts envSubs subs)
 
 > concatSubsts :: Substitutions -> Substitutions -> Substitutions
-> concatSubsts old new = resolveSubsts concat $ unique $ concat
+> concatSubsts old new = resolveSubsts concat $ unique $ map sub concat
 >   where concat = old ++ new
+>         sub = \x -> (fst x, applySub concat (snd x))
 
 > addSubsts :: Substitutions -> Environment -> Substitutions
 > addSubsts subs (envSubs, s, i) = concatSubsts envSubs subs
