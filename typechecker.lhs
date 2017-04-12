@@ -75,7 +75,11 @@ The below methods have been tested on small examples input as ASTs, not code -> 
 
   let sub = unique ((envSubs env1) ++ (envSubs env2))
 
-
+> inferGramT :: Environment -> [GramDecl] -> Either TypeError Environment
+> inferGramT env [] = Right env
+> inferGramT env (decl:decls) = do
+>   env1 <- inferDeclT env decl
+>   inferGramT env1 decls
 
 > inferDeclT :: Environment -> GramDecl -> Either TypeError Environment
 > inferDeclT env (GramDeclVar varDecl) = inferVarDeclT env varDecl
