@@ -72,6 +72,17 @@ this is detectable because it's not a TFunc. can we make it unify with a functio
 and assume non-returning functions are void.
 also check e.g. if(True) {} else {return 10;}
 
+!! TODO !! inferFieldT doesn't correctly infer:
+take(n,l) { if(n<=0) { return []; } else { return l.hd : take(n-1,l.tl); } }
+fails because l not known to be a list
+
+!! TODO !! add polymorphic type signatures (id(x) :: a -> a)
+
+!! TODO !! add built-in methods like isEmpty and print
+
+!! TODO !! fix recursive type detection?
+f0(x) { return (x,x); } f1(x) {return f0(f0(x));}
+
 
 > inferProgT :: [GramDecl] -> Either TypeError Environment
 > inferProgT prog = do
