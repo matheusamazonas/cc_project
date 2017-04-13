@@ -222,7 +222,7 @@ inferVarDeclT without loading from template used:
 >     then Left ("Wrong number of arguments.", p)
 >     else do
 >       env1 <- inferArgListType env args a1
->       restorePolymorph env1 (Id p i) (TFunc a1 r1)
+>       return env1
 > inferStmtT env (GramReturn p ret) rettyp           = 
 >   case ret of
 >     Just exp -> inferExpT env exp rettyp
@@ -270,7 +270,7 @@ inferVarDeclT without loading from template used:
 >       env1 <- inferArgListType env args a1
 >       subs <- unify t r1 p 
 >       let env2 = (addSubsts subs env1, envScopes env1, nextVar env1)
->       restorePolymorph env2 (Id p i) (TFunc a1 r1)
+>       return env2
 > inferExpT env (GramExpTuple p  e1 e2) t                     = do
 >   let fresh1 = fresh env
 >   env1 <- inferExpT (inc env) e1 fresh1
@@ -280,6 +280,9 @@ inferVarDeclT without loading from template used:
 >   res  <- unify (applySub sub t) (applySub sub (TTuple fresh1 fresh2)) p
 >   return (concatSubsts sub res, envScopes env2, nextVar env2)
 
+
+called with
+restorePolymorph env2 (Id p i) (TFunc a1 r1)
 
 > restorePolymorph :: Environment -> GramId -> Type -> Either TypeError Environment
 > restorePolymorph env (Id p i) (TFunc args ret) = do
@@ -370,7 +373,7 @@ Scope checks
 >   case varId (subs, scopes, nxt) iD of
 >     Nothing -> Left ("Use of undeclared variable '" ++ iD ++ "'", p)
 >     Just i  ->
->       case lookup i (reverse subs) of
+>       case lookup i subs of
 >         Nothing -> Right (TVar i)
 >         Just t  -> Right t
 
@@ -436,14 +439,14 @@ Substitution / environment manipulation
 > applySub sub (TTuple ta tb)      = TTuple (applySub sub ta) (applySub sub tb)
 > applySub sub (TList t)           = TList (applySub sub t)
 > applySub sub (TFunc tas tb)      = TFunc [applySub sub ta | ta <- tas] (applySub sub tb)
-> applySub sub (TVar i)            = case lookup i (reverse sub) of Just subbed -> subbed
->                                                                   Nothing     -> (TVar i)
+> applySub sub (TVar i)            = case lookup i sub of Just subbed -> subbed
+>                                                         Nothing     -> (TVar i)
 > applySub _ t                     = t
 
 > resolveSubsts :: Substitutions -> Substitutions -> Substitutions
 > resolveSubsts _ []                     = []
 > resolveSubsts envSubs ((i, TVar j) : subs) = 
->   case lookup j (reverse envSubs) of
+>   case lookup j envSubs of
 >     Nothing     -> (i, TVar j) : (resolveSubsts envSubs subs)
 >     Just subbed -> case () of
 >       () | subbed == TVar i -> (i, TVar i) : (resolveSubsts envSubs subs)
