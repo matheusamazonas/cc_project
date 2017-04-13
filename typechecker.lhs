@@ -63,15 +63,14 @@ parse = \x -> Test.parseSPL $ lexer (newPos "stdin" 1 1) x
 let Right prog = parse "<program>"
 inferGramT ([],[[]],1) prog
 
-!!! TODO !!! polymorphism sometimes still gets broken by function calls...
-it seems to put the original signature back in several times.
-also it just fails when the polymorphic function appears before its call?
+!! TODO !! polymorphism is gone. can we put it back again?
 
 !! TODO !! inferDeclT give error when variable used as function (var x = 5; x())
-this is detectable because it's not a TFunc
+this is detectable because it's not a TFunc. can we make it unify with a function for HOF?
 
 !! TODO !! check if non-void functions return anything,
-and assume non-returning functions are void
+and assume non-returning functions are void.
+also check e.g. if(True) {} else {return 10;}
 
 
 > inferProgT :: [GramDecl] -> Either TypeError Environment
