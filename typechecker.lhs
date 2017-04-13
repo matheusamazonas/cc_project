@@ -63,9 +63,15 @@ parse = \x -> Test.parseSPL $ lexer (newPos "stdin" 1 1) x
 let Right prog = parse "<program>"
 inferGramT ([],[[]],1) prog
 
+!!! TODO !!! polymorphism sometimes still gets broken by function calls...
+it seems to put the original signature back in several times.
+also it just fails when the polymorphic function appears before its call?
 
 !! TODO !! inferDeclT give error when variable used as function (var x = 5; x())
 this is detectable because it's not a TFunc
+
+!! TODO !! check if non-void functions return anything,
+and assume non-returning functions are void
 
 
 > inferProgT :: [GramDecl] -> Either TypeError Environment
@@ -216,7 +222,7 @@ inferVarDeclT without loading from template used:
 >     then Left ("Wrong number of arguments.", p)
 >     else do
 >       env1 <- inferArgListType env args a1
->       return env1
+>       restorePolymorph env1 (Id p i) (TFunc a1 r1)
 > inferStmtT env (GramReturn p ret) rettyp           = 
 >   case ret of
 >     Just exp -> inferExpT env exp rettyp
@@ -263,7 +269,8 @@ inferVarDeclT without loading from template used:
 >     else do
 >       env1 <- inferArgListType env args a1
 >       subs <- unify t r1 p 
->       return (addSubsts subs env1, envScopes env, nextVar env)
+>       let env2 = (addSubsts subs env1, envScopes env1, nextVar env1)
+>       restorePolymorph env2 (Id p i) (TFunc a1 r1)
 > inferExpT env (GramExpTuple p  e1 e2) t                     = do
 >   let fresh1 = fresh env
 >   env1 <- inferExpT (inc env) e1 fresh1
@@ -273,8 +280,24 @@ inferVarDeclT without loading from template used:
 >   res  <- unify (applySub sub t) (applySub sub (TTuple fresh1 fresh2)) p
 >   return (concatSubsts sub res, envScopes env2, nextVar env2)
 
-GramArgList [GramActArgs]
-GramActExpr GramExp [GramActArgs]
+
+> restorePolymorph :: Environment -> GramId -> Type -> Either TypeError Environment
+> restorePolymorph env (Id p i) (TFunc args ret) = do
+>   let Just funcvar = varId env i
+>   let subs = replaceFunc (envSubs env) funcvar funcvar (TFunc args ret)
+>   return (subs, envScopes env, nextVar env)
+> restorePolymorph _ _ _ = Left ("Polymorphism processing error", newPos "test_file" 1 1)
+
+> replaceFunc :: Substitutions -> Int -> Int -> Type -> Substitutions
+> replaceFunc [] _ _ _ = []
+> replaceFunc ((i,t):subs) funcvar varvar (TFunc args ret)
+>   | i < funcvar = (i,t) : (replaceFunc subs funcvar varvar (TFunc args ret))
+>   | i == funcvar = (i, TFunc args ret) : (replaceFunc subs funcvar (varvar+1) (TFunc args ret))
+>   | i == varvar = case args of (a1:a1s) -> (i, a1) : (replaceFunc subs funcvar (varvar+1) (TFunc a1s ret))
+>                                []       -> (i,ret) : subs
+>   | i > varvar =  case args of (a1:a1s) -> replaceFunc ((i,t):subs) funcvar (varvar+1) (TFunc a1s ret)
+>                                []       -> (i,  t) : subs
+
 
 > argListLength :: GramArgList -> Int
 > argListLength (GramArgList []) = 0
@@ -347,7 +370,7 @@ Scope checks
 >   case varId (subs, scopes, nxt) iD of
 >     Nothing -> Left ("Use of undeclared variable '" ++ iD ++ "'", p)
 >     Just i  ->
->       case lookup i subs of
+>       case lookup i (reverse subs) of
 >         Nothing -> Right (TVar i)
 >         Just t  -> Right t
 
@@ -391,6 +414,14 @@ Substitution / environment manipulation
 > unique :: (Ord a) => [a] -> [a]
 > unique = toList . fromList
 
+> uniqueSubs :: Substitutions -> Substitutions
+> uniqueSubs [] = []
+> uniqueSubs ((i,t):subs) = (i,t) : (uniqueSubs (removeSub i subs))
+>   where removeSub i [] = []
+>         removeSub i ((j,t):subs) = case () of 
+>           () | i == j    -> removeSub i subs
+>              | otherwise -> (j,t) : (removeSub i subs)
+
 > (+?+) :: Substitutions -> Either TypeError Substitutions -> Either TypeError Substitutions
 > (+?+) suba (Right subb) = Right (concatSubsts subb suba)
 > (+?+) suba l    = l
@@ -405,14 +436,14 @@ Substitution / environment manipulation
 > applySub sub (TTuple ta tb)      = TTuple (applySub sub ta) (applySub sub tb)
 > applySub sub (TList t)           = TList (applySub sub t)
 > applySub sub (TFunc tas tb)      = TFunc [applySub sub ta | ta <- tas] (applySub sub tb)
-> applySub sub (TVar i)            = case lookup i sub of Just subbed -> subbed
->                                                         Nothing     -> (TVar i)
+> applySub sub (TVar i)            = case lookup i (reverse sub) of Just subbed -> subbed
+>                                                                   Nothing     -> (TVar i)
 > applySub _ t                     = t
 
 > resolveSubsts :: Substitutions -> Substitutions -> Substitutions
 > resolveSubsts _ []                     = []
 > resolveSubsts envSubs ((i, TVar j) : subs) = 
->   case lookup j envSubs of
+>   case lookup j (reverse envSubs) of
 >     Nothing     -> (i, TVar j) : (resolveSubsts envSubs subs)
 >     Just subbed -> case () of
 >       () | subbed == TVar i -> (i, TVar i) : (resolveSubsts envSubs subs)
@@ -421,7 +452,7 @@ Substitution / environment manipulation
 
 > concatSubsts :: Substitutions -> Substitutions -> Substitutions
 > concatSubsts old new = resolveSubsts concat $ unique $ map sub concat
->   where concat = old ++ new
+>   where concat = new ++ old
 >         sub = \x -> (fst x, applySub concat (snd x))
 
 > addSubsts :: Substitutions -> Environment -> Substitutions
