@@ -93,7 +93,13 @@
 > example15 = "foo () { return 5; } var x = 7;"
 > example16 = "foo () { return 5; } var x = foo(); var y = foo();"
 > example17 = "var v = 7; foo () { return 5; } Int x = foo(); var y = foo();"
-> programTests = [example1]
+> example18 = "foo (a) { return a; var t = foo(3); }"
+> example19 = "var x = True; foo (a) { var x = 2; var j = x + 1; return a + x + j;} "
+> example20 = "foo(x) { if (x<3) { return 2;} else {return bar(x);} } bar(x) { if (x>3) {return 1; } else {return foo(x); } }"
+> example21 = "var x = 7; foo(y) :: Int -> Int { var z = x + y; return z; }"
+> example22 = "var x = True:[]; foo(x) :: Bool -> Int { var x = 5; return x; }"
+> example23 = "foo(x) { return x; } var y = foo(5); var z = foo(True);"
+> programTests = [example23]
 
 , example2, example3, example4, example5, example6, example7, example8, example9, example10, example11, example12]
 

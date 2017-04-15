@@ -2,7 +2,7 @@
 
 > import Text.ParserCombinators.Parsec.Prim hiding (satisfy)
 > import Text.Parsec.Pos (SourcePos, newPos)
-> import Text.Parsec.Combinator (optional, optionMaybe, many1, chainl1)
+> import Text.Parsec.Combinator (optional, optionMaybe, many1, chainl1, chainl, sepEndBy)
 > import Control.Monad (void)
 > import Control.Applicative ((<$>))
 > import Data.Maybe (maybeToList)
@@ -184,13 +184,12 @@ Grammar: FArgs = id [ ',' FArgs ]
 Parser for arguments list. Used on function calls (Expr8)
 Grammar: ArgList = '(' [ ActArgs ] ')'
 
-> pArgList :: MyParser GramArgList
+> pArgList :: MyParser [GramExp]
 > pArgList = do
 >   void $ isToken TokenOpenP
->   opt <- optionMaybe pActArgs
+>   opt <- sepEndBy pExpr (isToken TokenComma) 
 >   void $ isToken TokenCloseP
->   let args = maybeToList opt in
->     return $ GramArgList args
+>   return  opt
 
 Root parser for Expressions. 
 Parser for binary operator || (or)
@@ -350,20 +349,6 @@ Grammar: Exp9 = '(' Exp [ ',' Exp ] ')'
 >   (_, p) <- isToken TokenOpenSquareB
 >   void $ isToken TokenCloseSquareB
 >   return $ GramEmptyList p
-
-Grammar: ActArgs = Exp [ ',' ActArgs ]
-
-> pActArgs :: MyParser GramActArgs
-> pActArgs = do
->   expr <- pExpr
->   opt <- optionMaybe pOpt
->   let args = maybeToList opt in
->     return $ GramActExpr expr args
->   where
->     pOpt = do
->       void $ isToken TokenComma
->       args <- pActArgs
->       return args
 
 Since the grammar-defined fields are just TokenIds in the
 lexer, we need to match them manually in the parser. This

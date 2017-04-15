@@ -228,7 +228,7 @@ inferVarDeclT without loading from template used:
 >   inferVarDeclT env1 vardecl
 > inferStmtT env (GramStmtFunCall (GramFunCall (Id p i) args)) rettyp = do
 >   TFunc a1 r1 <- varType env (Id p i)
->   if (length a1 /= argListLength args)
+>   if (length a1 /= length args)
 >     then Left ("Wrong number of arguments.", p)
 >     else do
 >       env1 <- inferArgListType env args a1
@@ -274,7 +274,7 @@ inferVarDeclT without loading from template used:
 > inferExpT env (GramExpId gv) t                              = inferVarT env gv t
 > inferExpT env (GramExpFunCall (GramFunCall (Id p i) args)) t   = do
 >   TFunc a1 r1 <- varType env (Id p i)
->   if (length a1 /= argListLength args)
+>   if (length a1 /= length args)
 >     then Left ("Wrong number of arguments.", p)
 >     else do
 >       env1 <- inferArgListType env args a1
@@ -311,11 +311,6 @@ restorePolymorph env2 (Id p i) (TFunc a1 r1)
 >   | i > varvar =  case args of (a1:a1s) -> replaceFunc ((i,t):subs) funcvar (varvar+1) (TFunc a1s ret)
 >                                []       -> (i,  t) : subs
 
-
-> argListLength :: GramArgList -> Int
-> argListLength (GramArgList []) = 0
-> argListLength (GramArgList ((GramActExpr _ args):lst)) = 1 + argListLength (GramArgList args)
-
 > inferVarT :: Environment -> GramVar -> Type -> Either TypeError Environment
 > inferVarT env (Var (Id p i) gf) t = do
 >   typ <- varType env (Id p i)
@@ -347,11 +342,11 @@ restorePolymorph env2 (Id p i) (TFunc a1 r1)
 >   res <- unify (applySub sub texp) (applySub sub tcomp) p
 >   return (concatSubsts sub res, envScopes env1, nextVar env1)
 
-> inferArgListType :: Environment -> GramArgList -> [Type] -> Either TypeError Environment
-> inferArgListType env (GramArgList []) [] = return env
-> inferArgListType env (GramArgList ((GramActExpr e es):_)) (t:ts) = do
+> inferArgListType :: Environment -> [GramExp] -> [Type] -> Either TypeError Environment
+> inferArgListType env [] [] = return env
+> inferArgListType env (e:es) (t:ts) = do
 >   env1 <- inferExpT env e t
->   inferArgListType env1 (GramArgList es) ts
+>   inferArgListType env1 es ts
 
 N.B. convertType misses GramIdType GramId, which defines (unused and forbidden) custom types..
 
