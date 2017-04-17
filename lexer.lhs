@@ -29,7 +29,7 @@ column to 1 as well.
 > lexer p ('\'':'\\':'t':'\'':xs) = (TokenChar  '\t', p)          : lexer (incSourceColumn p 4) xs
 > lexer p ('\'':c:'\'':xs)        = (TokenChar c, p)              : lexer (incSourceColumn p 3) xs
 > lexer p ('<':'=':xs)            = (TokenOp LessOrEqual, p)      : lexer (incSourceColumn p 2) xs
-> lexer p ('>':'=':xs)            = (TokenOp GreatherOrEqual, p)  : lexer (incSourceColumn p 2) xs
+> lexer p ('>':'=':xs)            = (TokenOp GreaterOrEqual, p)   : lexer (incSourceColumn p 2) xs
 > lexer p ('=':'=':xs)            = (TokenOp Equals, p)           : lexer (incSourceColumn p 2) xs
 > lexer p ('!':'=':xs)            = (TokenOp Different, p)        : lexer (incSourceColumn p 2) xs
 > lexer p ('&':'&':xs)            = (TokenOp LogicalAnd, p)       : lexer (incSourceColumn p 2) xs

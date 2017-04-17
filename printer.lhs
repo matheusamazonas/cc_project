@@ -22,21 +22,21 @@
 >          	tb i ++ varId ++ printMany printField i fields
 
 > printOp :: Operation -> String
-> printOp Minus = "-"
-> printOp Plus = "+"
-> printOp Times = "*"
-> printOp Division = "/"
-> printOp LessThan = "<"
-> printOp LessOrEqual = "<="
-> printOp GreaterThan = ">"
-> printOp GreatherOrEqual= ">="
-> printOp Equals = "=="
-> printOp Different = "!="
-> printOp LogicalOr = "||"
-> printOp LogicalAnd = "&&"
-> printOp LogicalNot = "!"
-> printOp ListConst = ":"
-> printOp Mod = "%"
+> printOp Minus          = "-"
+> printOp Plus           = "+"
+> printOp Times          = "*"
+> printOp Division       = "/"
+> printOp LessThan       = "<"
+> printOp LessOrEqual    = "<="
+> printOp GreaterThan    = ">"
+> printOp GreaterOrEqual = ">="
+> printOp Equals         = "=="
+> printOp Different      = "!="
+> printOp LogicalOr      = "||"
+> printOp LogicalAnd     = "&&"
+> printOp LogicalNot     = "!"
+> printOp ListConst      = ":"
+> printOp Mod            = "%"
 
 > printGram :: Gram -> String
 > printGram decls = printMany printDecl 0 decls

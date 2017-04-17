@@ -12,7 +12,7 @@
 >   | LessThan 
 >   | LessOrEqual 
 >   | GreaterThan 
->   | GreatherOrEqual
+>   | GreaterOrEqual
 >   | Equals
 >   | Different
 >   | LogicalOr

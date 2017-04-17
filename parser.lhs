@@ -243,7 +243,7 @@ Grammar: Exp2 = Exp3 [ ('==' | '!=' | '<' | '<=' | '>' | '>=') Exp2 ]
 >     pLess = isToken $ TokenOp LessThan
 >     pLessEq = isToken $ TokenOp LessOrEqual
 >     pGreater = isToken $ TokenOp GreaterThan
->     pGreaterEq = isToken $ TokenOp GreatherOrEqual
+>     pGreaterEq = isToken $ TokenOp GreaterOrEqual
 >     pOpt = do
 >       (op, p) <- pEquals <|> pDifferent <|> pLess <|> pLessEq <|> pGreater <|> pGreaterEq
 >       e2 <- pExpr2 
