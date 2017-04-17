@@ -27,9 +27,9 @@
 
 > data GramType =
 >      GramBasicType SourcePos BasicType
+>    | GramIdType GramId
 >    | GramTupleType SourcePos GramType GramType 
 >    | GramListType SourcePos GramType 
->    | GramIdType GramId
 >   deriving (Show, Eq)
 
 > data GramFArgs = 
@@ -37,15 +37,15 @@
 >   deriving (Show, Eq)
 
 > data GramExp = 
->      GramBinary SourcePos Operation GramExp GramExp
->    | GramUnary SourcePos Operation GramExp
->    | GramBool SourcePos Bool 
+>      GramBool SourcePos Bool 
 >    | GramChar SourcePos Char 
 >    | GramNum SourcePos Int 
->    | GramExpFunCall GramFunCall
->    | GramExpId GramVar
->    | GramExpTuple SourcePos GramExp GramExp
 >    | GramEmptyList SourcePos
+>    | GramExpTuple SourcePos GramExp GramExp
+>    | GramBinary SourcePos Operation GramExp GramExp
+>    | GramUnary SourcePos Operation GramExp
+>    | GramExpId GramVar
+>    | GramExpFunCall GramFunCall
 >   deriving (Show, Eq)
 
 > data GramArgList = 
@@ -70,10 +70,10 @@
 > data GramStmt = 
 >      GramIf SourcePos GramExp [GramStmt] [GramStmt]
 >    | GramWhile SourcePos GramExp [GramStmt] 
->    | GramAttr SourcePos GramVar GramExp 
->    | GramStmtFunCall GramFunCall
 >    | GramReturn SourcePos (Maybe GramExp)
 >    | GramFunVarDecl GramVarDecl
+>    | GramAttr SourcePos GramVar GramExp 
+>    | GramStmtFunCall GramFunCall
 >   deriving (Show, Eq)   
 
 > data GramVarDecl = 
