@@ -48,16 +48,8 @@
 >    | GramExpFunCall GramFunCall
 >   deriving (Show, Eq)
 
-> data GramArgList = 
->      GramArgList [GramActArgs]
->   deriving (Show, Eq)
-
 > data GramFunCall = 
->     GramFunCall GramId GramArgList
->   deriving (Show, Eq)
-
-> data GramActArgs = 
->      GramActExpr GramExp [GramActArgs]
+>     GramFunCall GramId [GramExp]
 >   deriving (Show, Eq)
 
 > data GramField = 

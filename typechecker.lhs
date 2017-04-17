@@ -63,15 +63,25 @@ parse = \x -> Test.parseSPL $ lexer (newPos "stdin" 1 1) x
 let Right prog = parse "<program>"
 inferGramT ([],[[]],1) prog
 
-!!! TODO !!! polymorphism sometimes still gets broken by function calls...
-it seems to put the original signature back in several times.
-also it just fails when the polymorphic function appears before its call?
+!! TODO !! polymorphism is gone. can we put it back again?
 
 !! TODO !! inferDeclT give error when variable used as function (var x = 5; x())
-this is detectable because it's not a TFunc
+this is detectable because it's not a TFunc. can we make it unify with a function for HOF?
 
 !! TODO !! check if non-void functions return anything,
-and assume non-returning functions are void
+and assume non-returning functions are void.
+also check e.g. if(True) {} else {return 10;}
+
+!! TODO !! inferFieldT doesn't correctly infer:
+take(n,l) { if(n<=0) { return []; } else { return l.hd : take(n-1,l.tl); } }
+fails because l not known to be a list
+
+!! TODO !! add polymorphic type signatures (id(x) :: a -> a)
+
+!! TODO !! add built-in methods like isEmpty and print
+
+!! TODO !! fix recursive type detection?
+f0(x) { return (x,x); } f1(x) {return f0(f0(x));}
 
 
 > inferProgT :: [GramDecl] -> Either TypeError Environment
@@ -218,7 +228,7 @@ inferVarDeclT without loading from template used:
 >   inferVarDeclT env1 vardecl
 > inferStmtT env (GramStmtFunCall (GramFunCall (Id p i) args)) rettyp = do
 >   TFunc a1 r1 <- varType env (Id p i)
->   if (length a1 /= argListLength args)
+>   if (length a1 /= length args)
 >     then Left ("Wrong number of arguments.", p)
 >     else do
 >       env1 <- inferArgListType env args a1
@@ -264,7 +274,7 @@ inferVarDeclT without loading from template used:
 > inferExpT env (GramExpId gv) t                              = inferVarT env gv t
 > inferExpT env (GramExpFunCall (GramFunCall (Id p i) args)) t   = do
 >   TFunc a1 r1 <- varType env (Id p i)
->   if (length a1 /= argListLength args)
+>   if (length a1 /= length args)
 >     then Left ("Wrong number of arguments.", p)
 >     else do
 >       env1 <- inferArgListType env args a1
@@ -301,11 +311,6 @@ restorePolymorph env2 (Id p i) (TFunc a1 r1)
 >   | i > varvar =  case args of (a1:a1s) -> replaceFunc ((i,t):subs) funcvar (varvar+1) (TFunc a1s ret)
 >                                []       -> (i,  t) : subs
 
-
-> argListLength :: GramArgList -> Int
-> argListLength (GramArgList []) = 0
-> argListLength (GramArgList ((GramActExpr _ args):lst)) = 1 + argListLength (GramArgList args)
-
 > inferVarT :: Environment -> GramVar -> Type -> Either TypeError Environment
 > inferVarT env (Var (Id p i) gf) t = do
 >   typ <- varType env (Id p i)
@@ -337,11 +342,11 @@ restorePolymorph env2 (Id p i) (TFunc a1 r1)
 >   res <- unify (applySub sub texp) (applySub sub tcomp) p
 >   return (concatSubsts sub res, envScopes env1, nextVar env1)
 
-> inferArgListType :: Environment -> GramArgList -> [Type] -> Either TypeError Environment
-> inferArgListType env (GramArgList []) [] = return env
-> inferArgListType env (GramArgList ((GramActExpr e es):_)) (t:ts) = do
+> inferArgListType :: Environment -> [GramExp] -> [Type] -> Either TypeError Environment
+> inferArgListType env [] [] = return env
+> inferArgListType env (e:es) (t:ts) = do
 >   env1 <- inferExpT env e t
->   inferArgListType env1 (GramArgList es) ts
+>   inferArgListType env1 es ts
 
 N.B. convertType misses GramIdType GramId, which defines (unused and forbidden) custom types..
 
