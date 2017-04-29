@@ -56,6 +56,9 @@
 > printVarDeclTail i (GramVarDeclTail (Id _ s) expr) = tb i ++ s ++ " = "++ printExpr 0 expr ++ ";\n"
 
 > printFuncDeclTail :: Int -> GramFuncDeclTail -> String
+> printFuncDeclTail i (GramFuncDeclTail args [] stmts) = 
+>           tb i ++  "(" ++ printMany printFArgs 0 args ++ ")\n{\n"
+>           ++ printMany printStmt 1 stmts ++ "}"
 > printFuncDeclTail i (GramFuncDeclTail args funTypes stmts) = 
 >           tb i ++  "(" ++ printMany printFArgs 0 args ++ ")"
 >           ++ " :: " ++ printMany printFunType 0 funTypes ++ "\n{\n"
@@ -63,7 +66,7 @@
 
 > printRetType :: Int -> GramRetType -> String
 > printRetType i (GramRetType t) = printType i t
-> printRetType i (GramVoidType _) = tb i ++ "void"
+> printRetType i (GramVoidType _) = tb i ++ "Void"
 
 > printFunType :: Int -> GramFunType -> String
 > printFunType i (GramFunType ts r) = 
@@ -127,6 +130,10 @@
 >           ++ " = " ++ printExpr 0 expr ++ ";\n"
 
 > printFuncall :: Int -> GramFunCall -> String
+> printFuncall i (GramOverloadedFunCall ts (Id _ fId) args) = tb i ++ "/*" ++ printTypes ts ++ "*/" ++ fId ++ "(" ++ printArgs 0 args ++ ")"
+>   where printTypes [] = ""
+>         printTypes [t] = printType 0 t
+>         printTypes (t:ts) = printType 0 t ++ "," ++ printTypes ts
 > printFuncall i (GramFunCall (Id _ fId) args) = 
 >           tb i ++ fId ++ "(" 
 >           ++ printArgs 0 args ++ ")"
@@ -143,8 +150,9 @@
 > printExpr i (GramNum _ n)  = tb i ++ show n 
 > printExpr i (GramEmptyList _) = tb i ++ "[]"
 > printExpr i (GramExpTuple _ expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ ", " ++ printExpr 0 expr2 ++ ")"
-> printExpr i (GramBinary _ op expr1 expr2) = "(" ++ printExpr i expr1 ++ printOp op ++ printExpr 0 expr2 ++ ")"
-> printExpr i (GramUnary _ op expr) = "(" ++ printOp op ++ printExpr 0 expr ++ ")" ++ ")"
+> printExpr i (GramOverloadedBinary _ t op expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ " /*" ++ printType 0 t ++ "*/" ++ printOp op ++ " " ++ printExpr 0 expr2 ++ ")"
+> printExpr i (GramBinary _ op expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ " " ++ printOp op ++ " " ++ printExpr 0 expr2 ++ ")"
+> printExpr i (GramUnary _ op expr) = tb i ++ printOp op ++ printExpr 0 expr
 > printExpr i (GramExpFunCall call) = printFuncall i call
 > printExpr i (GramExpId var) = printVar i var
 

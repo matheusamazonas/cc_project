@@ -43,13 +43,15 @@
 >    | GramEmptyList SourcePos
 >    | GramExpTuple SourcePos GramExp GramExp
 >    | GramBinary SourcePos Operation GramExp GramExp
+>    | GramOverloadedBinary SourcePos GramType Operation GramExp GramExp
 >    | GramUnary SourcePos Operation GramExp
 >    | GramExpId GramVar
 >    | GramExpFunCall GramFunCall
 >   deriving (Show, Eq)
 
 > data GramFunCall = 
->     GramFunCall GramId [GramExp]
+>      GramFunCall GramId [GramExp]
+>    | GramOverloadedFunCall [GramType] GramId [GramExp]
 >   deriving (Show, Eq)
 
 > data GramField = 
