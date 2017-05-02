@@ -3,7 +3,7 @@
 > import Control.Monad.Except
 > import Control.Monad.State
 > import Data.Ord (comparing)
-> import Data.List ((\\),nub,sortBy)
+> import Data.List ((\\), find, nub, sortBy)
 > import Dependency
 > import Grammar
 > import Printer (printGram)
@@ -82,11 +82,11 @@ Does not support assignment of functions to variables
 ===============================================================================
 
 TBD: char vs int? currently arithmetic works only for integers.
-     char arithmetic is nice ('0' + i), but chars are to be printed as chars so
-	 TChar cannot be removed.. how to solve? maybe make TChar and TInt unify?
-TBD: maybe allow var.s to only be alone in a mutually recursive block,
-     to prevent OK-ing e.g. "var flip = 0:flop; var flop = 1:flip;"
-
+     char arithmetic is nice ('0' + i), but chars are to be printed as chars.
+	 so TChar cannot be removed.. how to solve? 
+	 TChar and TInt cannot simply unify because '0'+2 or '7'-'0' needs to be
+	 TChar, but 1+1 needs to be TInt in GramBinary Plus
+TODO: disallow custom type annotations for variable declarations 
 
 
 
@@ -119,6 +119,7 @@ with type annotations in /*comments*/
 
 > inferDeclBlock :: [GramDecl] -> Environment [GramDecl]
 > inferDeclBlock ds = do
+>   checkRecursiveVars ds
 >   inferDeclsHeader ds
 >   ds <- inferDeclsBody ds
 >   ds <- inferDeclsPost ds
@@ -151,6 +152,20 @@ with type annotations in /*comments*/
 >               return $ GramDeclFun fundecl
 >           decls <- inferDeclsPost decls
 >           return $ decl:decls
+
+> checkRecursiveVars :: [GramDecl] -> Environment () -- forbids otherwise allowed "var flip = 0:flop; var flop = 1:flip;"
+> checkRecursiveVars decls = case find isVar decls of
+>   Nothing   -> return ()
+>   Just decl -> 
+>     case () of 
+>       _ | length decls > 1 ->
+>             let Id p i = getId decl in
+>               throwError ("Mutually recursive variable definitions are not allowed: " ++ i, p)
+>         | otherwise -> return ()
+>   where isVar (GramDeclVar _) = True
+>         isVar _ = False
+>         getId (GramDeclVar (GramVarDeclType _ (GramVarDeclTail id _))) = id
+>         getId (GramDeclVar (GramVarDeclVar (GramVarDeclTail id _))) = id
 
 
 
