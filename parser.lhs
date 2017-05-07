@@ -2,7 +2,8 @@
 
 > import Text.ParserCombinators.Parsec.Prim hiding (satisfy)
 > import Text.Parsec.Pos (SourcePos, newPos)
-> import Text.Parsec.Combinator (optional, optionMaybe, many1, chainl1, chainl, sepEndBy)
+> import Text.Parsec.Error (ParseError)
+> import Text.Parsec.Combinator (optional, optionMaybe, many1, chainl1, chainl, sepEndBy, eof)
 > import Control.Monad (void)
 > import Control.Applicative ((<$>))
 > import Data.Maybe (maybeToList)
@@ -577,6 +578,9 @@ Grammar: SPL = Decl+
 
 > pSPL :: MyParser Gram
 > pSPL = many1 pDecl
+
+> parseTokens :: String -> [PosToken] -> Either ParseError Gram
+> parseTokens fileName content = parse (pSPL <* eof) fileName content
 
 
 

@@ -55,7 +55,7 @@ column to 1 as well.
 > lexer p (']':xs)                = (TokenCloseSquareB, p)        : lexer (incSourceColumn p 1) xs
 > lexer p ('.':xs)                = (TokenPeriod, p)              : lexer (incSourceColumn p 1) xs
 > lexer p (',':xs)                = (TokenComma , p)              : lexer (incSourceColumn p 1) xs
-> lexer _ xs                      = error $ "Lexer error. Can't lex: " ++ xs
+> lexer p xs                      = error $ "Lexer error at " ++ show p
 
 > lexText :: SourcePos -> String -> [PosToken]
 > lexText p s = lexId p id : lexer (incSourceColumn p (length id)) rest
