@@ -20,18 +20,19 @@
 > addVar (d, (s:ss)) id = (d+1, ((id, d):s):ss)
 
 > lookupVar :: Environment -> Id -> Depth
-> lookupVar (_, (s:_)) varId = case lookup varId s of
->                               Nothing -> -999
+> lookupVar (d, []) varId = -999
+> lookupVar (d, (s:ss)) varId = case lookup varId s of
+>                               Nothing -> lookupVar (d, ss) varId
 >                               Just d -> d
 
 > generateExpr :: (Environment, Code) -> GramExp -> Code
 > generateExpr (e, c) (GramBool _ True) = c ++ "ldc -1\n"
 > generateExpr (e, c) (GramBool _ False) = c ++ "ldc 0\n"
 > generateExpr (e, c) (GramChar _ char) = c ++ "ldc " ++ show (ord char) ++ "\n"
-> generateExpr (e, c) (GramNum _ i) = c ++ "ldc " ++ show i ++ "\n"
+> generateExpr (e, c) (GramNum _ i) = "ldc " ++ show i ++ "\n"
 > generateExpr (e, c) (GramBinary _ op expr1 expr2) = c ++ generateExpr (e, c) expr1 ++ generateExpr (e, c) expr2 ++ generateOperation op
 > generateExpr (e, c) (GramUnary _ op expr) = c ++ generateExpr (e, c) expr ++ generateOperation op
-> generateExpr (e, c) (GramExpId (Var (Id _ varId) fields)) = c ++ "ldl " ++ show (lookupVar e varId) ++ "\n"
+> generateExpr (e, c) (GramExpId (Var (Id _ varId) fields)) = "ldl " ++ show (lookupVar e varId) ++ "\n"
 
 > generateOperation :: Operation -> String
 > generateOperation Minus          = "sub\n"
@@ -56,17 +57,17 @@
 >            (concat $ map snd $ map (generateStmt (e, c)) stmts) ++ "bra while_start\n" ++ "while_end:"
 > generateStmt (e, c) (GramIf _ expr thenStmts []) = env e $
 >            (generateExpr (e, c) expr) ++ "brf fi\n" ++ 
->            (concat $ map snd $ map (generateStmt (e, c)) thenStmts) ++ "fi:"
+>            (snd $ foldl (\x y -> generateStmt x y) (e, c) thenStmts) ++ "fi:"
 > generateStmt (e, c) (GramIf _ expr thenStmts elseStmts) = env e $
 >            (generateExpr (e, c) expr) ++ "brf else\n" ++ 
->            (concat $ map snd $ map (generateStmt (e, c)) thenStmts) ++ "bra fi\n" ++ 
->            "else: " ++ (concat $ map snd $ map (generateStmt (e, c)) elseStmts) ++ "fi:"
-> generateStmt (e, c) (GramReturn _ (Nothing)) = env e $ c ++ "unlink\nret\n"
-> generateStmt (e, c) (GramReturn _ (Just expr)) = env e $ c ++ (generateExpr (e, c) expr) ++ "unlink\nret\n"
+>            (snd $ foldl (\x y -> generateStmt x y) (e, c) thenStmts) ++ "bra fi\n" ++ 
+>            "else: " ++ (snd $ foldl (\x y -> generateStmt x y) (e, c) elseStmts) ++ "fi:"
+> generateStmt (e, c) (GramReturn _ (Nothing)) = env e $ "unlink\nret\n"
+> generateStmt (e, c) (GramReturn _ (Just expr)) = env e $ (generateExpr (e, c) expr) ++ "unlink\nret\n"
 > generateStmt (e, c) (GramFunVarDecl (GramVarDeclType t (GramVarDeclTail (Id _ varId) expr))) = env (addVar e varId) (generateExpr (e, c) expr)
 > generateStmt (e, c) (GramFunVarDecl (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr))) = env (addVar e varId) (generateExpr (e, c) expr)
 
-> testStmt s = generateStmt ((0, [[]]), "") s
+> testStmt s = generateStmt ((1, [[]]), "") s
 
 undefined
 
@@ -78,7 +79,7 @@ Right (GramIf undefined (GramBinary undefined LessThan (GramNum undefined 3) (Gr
 
 (GramIf undefined (GramBinary undefined LessThan (GramNum undefined 3) (GramNum undefined 7)) [GramFunVarDecl (GramVarDeclVar (GramVarDeclTail (Id undefined "x") (GramBinary undefined Plus (GramNum undefined 4) (GramNum undefined 6)))),GramReturn undefined (Just (GramExpId (Var (Id undefined "x") [])))] [GramReturn undefined (Just (GramNum undefined 0))])
 
-
+if (3 < 7) { var x = 4+6; var y = 3+2; return x+y; } else { return 0; }
 
 
 
