@@ -1,5 +1,7 @@
 > module Generator where
 
+> import Control.Monad.State
+> import Control.Monad.Writer
 > import Grammar
 > import Token
 > import Data.Char
@@ -8,93 +10,134 @@
 > type Id = String
 > type Code = String
 > type Scope = [(Id, Depth)]
-> type Environment = (Depth, [Scope])
+> type EnvType = (Depth, [Scope])
 
-> generate :: Environment -> Gram -> (Environment, String)
-> generate e _ = env e $ "LDC 2\nLDC 3\nADD" ++ "\nTRAP 0"
+> type Environment = WriterT Code (State EnvType)
 
-> env :: Environment -> Code -> (Environment, Code)
-> env e c = (e, c)
 
-> addVar :: Environment -> Id -> Environment
-> addVar (d, (s:ss)) id = (d+1, ((id, d):s):ss)
 
-> lookupVar :: Environment -> Id -> Depth
-> lookupVar (d, []) varId = -999
-> lookupVar (d, (s:ss)) varId = case lookup varId s of
->                               Nothing -> lookupVar (d, ss) varId
->                               Just d -> d
+Code generation
 
-> generateExpr :: (Environment, Code) -> GramExp -> Code
-> generateExpr (e, c) (GramBool _ True) = c ++ "ldc -1\n"
-> generateExpr (e, c) (GramBool _ False) = c ++ "ldc 0\n"
-> generateExpr (e, c) (GramChar _ char) = c ++ "ldc " ++ show (ord char) ++ "\n"
-> generateExpr (e, c) (GramNum _ i) = "ldc " ++ show i ++ "\n"
-> generateExpr (e, c) (GramBinary _ op expr1 expr2) = c ++ generateExpr (e, c) expr1 ++ generateExpr (e, c) expr2 ++ generateOperation op
-> generateExpr (e, c) (GramUnary _ op expr) = c ++ generateExpr (e, c) expr ++ generateOperation op
-> generateExpr (e, c) (GramExpId (Var (Id _ varId) fields)) = "ldl " ++ show (lookupVar e varId) ++ "\n"
+Call with, e.g., run generateStmtBlock stmts, with stmts :: [GramStmt]
+Once implemented, generate = run generateGram
+
+> generate :: Gram -> Code
+> generate g = "LDC 2\nLDC 3\nADD" ++ "\nTRAP 0"
+
+> generateStmtBlock :: [GramStmt] -> Environment ()
+> generateStmtBlock stmts = do
+>   pushScope
+>   generateStmtBlock' stmts
+>   where generateStmtBlock' [] = popScope
+>         generateStmtBlock' (stmt:stmts) = do
+>           generateStmt stmt
+>           generateStmtBlock' stmts
+
+> generateStmt :: GramStmt -> Environment ()
+> generateStmt (GramWhile _ expr stmts) = do
+>   label "while_start"
+>   generateExpr expr
+>   write "brf while_end"
+>   generateStmtBlock stmts
+>   write "bra while_start"
+>   label "while_end"
+> generateStmt (GramIf _ expr thenStmts elseStmts) = do
+>   generateExpr expr
+>   write "brf else"
+>   generateStmtBlock thenStmts 
+>   write "bra fi"
+>   label "else" 
+>   generateStmtBlock elseStmts
+>   label "fi"
+> generateStmt (GramReturn _ (Nothing)) = write "unlink\nret"
+> generateStmt (GramReturn _ (Just expr)) = do
+>   generateExpr expr
+>   write "unlink\nret"
+> generateStmt (GramFunVarDecl (GramVarDeclType t (GramVarDeclTail (Id _ varId) expr))) = do
+>   addVar varId
+>   generateExpr expr
+> generateStmt (GramFunVarDecl (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr))) = do
+>   addVar varId
+>   generateExpr expr
+
+
+> generateExpr :: GramExp -> Environment ()
+> generateExpr (GramBool _ True) = write "ldc -1"
+> generateExpr (GramBool _ False) = write "ldc 0"
+> generateExpr (GramChar _ char) = write $ "ldc " ++ show (ord char)
+> generateExpr (GramNum _ i) = write $ "ldc " ++ show i
+> generateExpr (GramBinary _ op expr1 expr2) = do
+>   generateExpr expr1
+>   generateExpr expr2
+>   write $ generateOperation op
+> generateExpr (GramUnary _ op expr) = do
+>   generateExpr expr
+>   write $ generateOperation op
+> generateExpr (GramExpId (Var (Id _ varId) fields)) = do
+>   varLoc <- lookupVar varId
+>   write $ "ldl " ++ show varLoc
 
 > generateOperation :: Operation -> String
-> generateOperation Minus          = "sub\n"
-> generateOperation Plus           = "add\n"
-> generateOperation Times          = "mul\n"
-> generateOperation Division       = "div\n"
-> generateOperation LessThan       = "lt\n"
-> generateOperation LessOrEqual    = "le\n"
-> generateOperation GreaterThan    = "gt\n"
-> generateOperation GreaterOrEqual = "ge\n"
-> generateOperation Equals         = "eq\n"
-> generateOperation Different      = "ne\n"
-> generateOperation LogicalOr      = "or\n"
-> generateOperation LogicalAnd     = "and\n"
-> generateOperation LogicalNot     = "not\n"
-> generateOperation ListConst      = "???\n"
-> generateOperation Mod            = "mod\n"
-
-> generateStmt :: (Environment, Code) -> GramStmt -> (Environment, Code)
-> generateStmt (e, c) (GramWhile _ expr stmts) = env e $
->            "while_start:" ++ (generateExpr (e, c) expr) ++ "brf while_end\n" ++
->            (concat $ map snd $ map (generateStmt (e, c)) stmts) ++ "bra while_start\n" ++ "while_end:"
-> generateStmt (e, c) (GramIf _ expr thenStmts []) = env e $
->            (generateExpr (e, c) expr) ++ "brf fi\n" ++ 
->            (snd $ foldl (\x y -> generateStmt x y) (e, c) thenStmts) ++ "fi:"
-> generateStmt (e, c) (GramIf _ expr thenStmts elseStmts) = env e $
->            (generateExpr (e, c) expr) ++ "brf else\n" ++ 
->            (snd $ foldl (\x y -> generateStmt x y) (e, c) thenStmts) ++ "bra fi\n" ++ 
->            "else: " ++ (snd $ foldl (\x y -> generateStmt x y) (e, c) elseStmts) ++ "fi:"
-> generateStmt (e, c) (GramReturn _ (Nothing)) = env e $ "unlink\nret\n"
-> generateStmt (e, c) (GramReturn _ (Just expr)) = env e $ (generateExpr (e, c) expr) ++ "unlink\nret\n"
-> generateStmt (e, c) (GramFunVarDecl (GramVarDeclType t (GramVarDeclTail (Id _ varId) expr))) = env (addVar e varId) (generateExpr (e, c) expr)
-> generateStmt (e, c) (GramFunVarDecl (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr))) = env (addVar e varId) (generateExpr (e, c) expr)
-
-> testStmt s = generateStmt ((1, [[]]), "") s
-
-undefined
-
-
-Right (GramIf undefined (GramBinary undefined LessThan (GramNum undefined 3) (GramNum undefined 7)) [GramFunVarDecl (GramVarDeclVar (GramVarDeclTail (Id undefined "x") (GramNum undefined 4))),GramReturn undefined (Just (GramExpId (Var (Id undefined "x") [])))] [GramReturn undefined (Just (GramNum undefined 0))])
-
-(GramIf "test_file" (line 1, column 1) (GramBinary "test_file" (line 1, column 7) LessThan (GramNum "test_file" (line 1, column 5) 3) (GramNum "test_file" (line 1, column 9) 7)) [GramFunVarDecl (GramVarDeclVar (GramVarDeclTail (Id "test_file" (line 1, column 18) "x") (GramBinary "test_file" (line 1, column 23) Plus (GramNum "test_file" (line 1, column 22) 4) (GramNum "test_file" (line 1, column 24) 6)))),GramReturn "test_file" (line 1, column 27) (Just (GramExpId (Var (Id "test_file" (line 1, column 34) "x") [])))] [GramReturn "test_file" (line 1, column 46) (Just (GramNum "test_file" (line 1, column 53) 0))])
-
-
-(GramIf undefined (GramBinary undefined LessThan (GramNum undefined 3) (GramNum undefined 7)) [GramFunVarDecl (GramVarDeclVar (GramVarDeclTail (Id undefined "x") (GramBinary undefined Plus (GramNum undefined 4) (GramNum undefined 6)))),GramReturn undefined (Just (GramExpId (Var (Id undefined "x") [])))] [GramReturn undefined (Just (GramNum undefined 0))])
-
-if (3 < 7) { var x = 4+6; var y = 3+2; return x+y; } else { return 0; }
+> generateOperation Minus          = "sub"
+> generateOperation Plus           = "add"
+> generateOperation Times          = "mul"
+> generateOperation Division       = "div"
+> generateOperation LessThan       = "lt"
+> generateOperation LessOrEqual    = "le"
+> generateOperation GreaterThan    = "gt"
+> generateOperation GreaterOrEqual = "ge"
+> generateOperation Equals         = "eq" -- 
+> generateOperation Different      = "ne" --
+> generateOperation LogicalOr      = "or"
+> generateOperation LogicalAnd     = "and"
+> generateOperation LogicalNot     = "not"
+> generateOperation ListConst      = "halt" --
+> generateOperation Mod            = "mod"
 
 
 
+Scope handlers
+
+> pushScope :: Environment ()
+> pushScope = do
+>   (d, ss) <- get
+>   put (d, []:ss)
+
+> popScope :: Environment ()
+> popScope = do
+>   (d, s:ss) <- get
+>   put (d, ss)
 
 
 
+Variable handlers
+
+> addVar :: Id -> Environment ()
+> addVar id = do
+>   (d, (s:ss)) <- get
+>   put (d+1, ((id, d):s):ss)
+
+> lookupVar :: Id -> Environment Depth
+> lookupVar varId = do
+>   (_, ss) <- get
+>   return $ lookupVar' varId ss
+>   where lookupVar' _ [] = -999
+>         lookupVar' varId (s:ss) =
+>           case lookup varId s of
+>             Nothing -> lookupVar' varId ss
+>             Just d -> d
 
 
+Environment handlers
 
+> run :: (t -> Environment ()) -> t -> Code
+> run gen gram = evalState (execWriterT (gen gram)) initEnv
 
+> label :: String -> Environment ()
+> label l = tell (l ++ ": ")
 
+> write :: String -> Environment ()
+> write c = tell (c ++ "\n")
 
-
-
-
-
-
-
+> initEnv :: EnvType
+> initEnv = (1, [[]])
