@@ -1,7 +1,7 @@
 > module TestTypeCheck where
 
 > import Test
-> import TypeChecker
+> import PolyChecker
 > import Lexer (lexer)
 
 > newEnv = ([], [[]], 1)

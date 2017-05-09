@@ -1,4 +1,4 @@
-> module PolyTypeChecker where
+> module PolyChecker where
 
 > import Control.Monad.Except
 > import Control.Monad.State
@@ -969,3 +969,4 @@ Tree post-decoration - stage 3
 
 > nP :: SourcePos
 > nP = newPos "<internal>" 0 0
+

@@ -2,7 +2,6 @@
 
 > import Parser 
 > import Grammar
-> import TypeChecker
 > import Lexer (lexer)
 > import Text.Parsec.Combinator (eof)
 > import Text.Parsec.Pos (SourcePos, newPos)

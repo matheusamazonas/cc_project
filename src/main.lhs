@@ -2,7 +2,7 @@
 
 > import Lexer (lexer)
 > import Parser (parseTokens)
-> import TypeChecker (inferProgT)
+> import PolyChecker (inferProg)
 > import Generator (generate)
 > import System.IO
 > import System.Environment
@@ -24,11 +24,11 @@
 >   case ast of
 >     Left e -> do putStrLn $ show e; return ""
 >     Right ast -> do
->       let i = inferProgT ast
+>       let i = inferProg ast
 >       case i of
 >         Left e -> do putStrLn $ show e; return ""
->         Right _ -> do
->           return $ generate ast
+>         Right aast -> do
+>           return $ generate aast
 
 > main :: IO ()
 > main = do
