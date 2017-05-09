@@ -1,0 +1,11 @@
+Bigger improvements:
+- higher-order functions + type inference
+
+
+Possible little improvements:
+- character arithmetic: make TInt and TChar unify, 
+  two functions chr and ord (Int->Char and vice versa)
+  as a form of typecast (with null body in code gen)
+- string literals (convert "lol" into 'l':'o':'l':[])
+- for loops (convert to while loop in code gen)
+
