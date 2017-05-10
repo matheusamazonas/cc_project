@@ -1,5 +1,6 @@
 > module Generator where
 
+> import Control.Monad (mapM_,sequence_)
 > import Control.Monad.State
 > import Control.Monad.Writer
 > import Grammar
@@ -21,7 +22,7 @@
 Code generation
 
 Call with, e.g., run generateStmtBlock stmts, with stmts :: [GramStmt]
-Once implemented, generate = run generateGram
+Once implemented, generate = run generateProgram
 
 > generate :: Gram -> Code
 > generate = run generateProgram 
@@ -30,26 +31,25 @@ Once implemented, generate = run generateGram
 > generateProgram g = do 
 >   write "bra main"
 >   generateGram g
+>   sequence_ builtins
 
 
-> -- WARNING this is a way to test and evaluate expressions 
-> -- in just one variable declaration, using a trap.
-> -- for the final codegen, the actual implementations of
-> -- declarations need to be rewritten
 > generateGram :: Gram -> Environment ()
 > generateGram [] = return ()
 > generateGram (x:xs) = case x of
 >   GramDeclVar vardecl -> case vardecl of
 >     GramVarDeclType t (GramVarDeclTail id@(Id p i) e) -> do -- type checker ensures only typed variable declarations
 >       write $ "; define " ++ i
->       generateExpr e 
+>       generateExpr e -- TODO global variable declarations
 >       generateGram xs
->       write debug -- WARNING THIS IS ADDED AFTER EVERY CALL
 >   GramDeclFun fundecl -> do
 >     generateFunDecl fundecl
 >     generateGram xs
 
-> debug = "\n; debug\n" ++ "trap 0"
+> builtins = let und = undefined in
+>   [generatePrint (GramListType und und), generatePrint (GramTupleType und und und), 
+>    generatePrint (GramBasicType und IntType), generatePrint (GramBasicType und BoolType),
+>    generatePrint (GramBasicType und CharType), runTimeException "__exc_untyped_variable" "Runtime exception: could not resolve overloading for print"]
 
 > addArgs :: [GramId] -> Environment ()
 > addArgs args = do
@@ -229,6 +229,107 @@ Once implemented, generate = run generateGram
 >           return $ "bsr " ++ leq ++ "\najs -2\nldr RR"
 >         equals (GramIdType id) = return "halt" -- TODO look up type vars for overloading
 
+
+
+
+Overloading handlers
+
+
+A type frame is generated during a print call.
+This contains information about which print methods should be used during execution.
+In particular, types containing types (e.g., lists and tuples) use this information
+to determine at runtime which print functions should be called for their elements.
+
+A type frame is a tuple defined as follows.
+Here, TF_element, TF_fst and TF_snd are type frames for the contained types.
+int/char/bool: TF = (__print_char/int/bool, null)
+list: TF = (__print_list, TF_element)
+tuple: TF = (__print_tuple, (TF_fst, TF_snd))
+
+> callPrint :: GramType -> Environment ()
+> callPrint (GramBasicType _ CharType) = write "bsr __print_char"
+> callPrint (GramBasicType _ IntType)  = write "bsr __print_int"
+> callPrint (GramBasicType _ BoolType) = write "bsr __print_bool"
+> callPrint (GramListType _ t) = do
+>   printFrame t
+>   write "lds -1\nbsr __print_list"
+> callPrint (GramTupleType _ t1 t2) = do
+>   printFrame t1
+>   printFrame t2
+>   write "stmh 2\nlds -1\nbsr __print_tuple"
+> callPrint (GramIdType _) = write "bsr __exc_untyped_variable"
+
+> printFrame :: GramType -> Environment ()
+> printFrame (GramBasicType _ CharType) = write "ldc __print_char\nldc 0\nstmh 2"
+> printFrame (GramBasicType _ IntType)  = write "ldc __print_int\nldc 0\nstmh 2"
+> printFrame (GramBasicType _ BoolType) = write "ldc __print_bool\nldc 0\nstmh 2"
+> printFrame (GramListType _ t) = do
+>   write "ldc __print_list"
+>   printFrame t
+>   write "stmh 2"
+> printFrame (GramTupleType _ t1 t2) = do
+>   write "ldc __print_tuple"
+>   printFrame t1
+>   printFrame t2
+>   write "stmh 2\nstmh 2"
+> printFrame (GramIdType _) = write "ldc __exc_untyped_variable\nldc 0\nstmh 2"
+
+> generatePrint :: GramType -> Environment ()
+> generatePrint (GramBasicType _ CharType) = write "__print_char: lds -1\ntrap 1\nret"
+> generatePrint (GramBasicType _ IntType)  = write "__print_int: lds -1\ntrap 0\nret"
+> generatePrint (GramBasicType _ BoolType) = do
+>   write "__print_bool: lds -1\nbrf __print_bool_false"
+>   printText "True"
+>   write "ret"
+>   label "__print_bool_false"
+>   printText "False"
+>   write "ret"
+> generatePrint (GramListType _ _) = do
+>   label "__print_list"
+>   printChar '['
+>   write "lds -1\nbrf print_list_post" -- check for empty list
+>   write "print_list_elem: lds -2\nldh 0" -- load inner type frame
+>   write "\nlds -2\nldh -1" -- load head
+>   write "\nlds -4\nldh -1\njsr\najs -2" -- print head 
+>   write "lds -1\nldh 0\nbrf print_list_post" -- close singleton list
+>   printText ", "
+>   write "lds -1\nldh 0\nsts -2\nbra print_list_elem" -- for longer lists, recurse
+>   label "print_list_post"
+>   printChar ']'
+>   write "ret"
+> generatePrint (GramTupleType _ _ _) = do
+>   label "__print_tuple"
+>   printChar '('
+>   write "lds -2\nldh -1\nlds 0\nldh 0" -- load left type frame
+>   write "lds -3\nldh -1" -- load left element
+>   write "lds -2\nldh -1\njsr\najs -3" -- print left element
+>   printText ", "
+>   write "lds -2\nldh 0\nlds 0\nldh 0" -- load right type frame
+>   write "lds -3\nldh 0" -- load right element
+>   write "lds -2\nldh -1\njsr\najs -3" -- print right element
+>   printChar ')'
+>   write "ret"   
+
+
+
+
+
+Exception handlers
+
+> runTimeException :: String -> String -> Environment ()
+> runTimeException lab s = do
+>   write $ "; " ++ s
+>   label lab
+>   printChar '\n'
+>   printText s
+>   printChar '\n'
+>   write "halt\n"
+
+> printText :: String -> Environment ()
+> printText = mapM_ printChar
+
+> printChar :: Char -> Environment ()
+> printChar c = write $ "ldc " ++ show (ord c) ++ "\ntrap 1"
 
 
 
