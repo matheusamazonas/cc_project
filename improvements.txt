@@ -1,5 +1,10 @@
-Bigger improvements:
+Extension:
 - higher-order functions + type inference
+
+
+Bigger improvements:
+- polymorphic overloading (propagate type frames)
+- double label merging (a: nop b: op)
 
 
 Possible little improvements:
