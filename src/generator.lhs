@@ -116,7 +116,7 @@ Once implemented, generate = run generateProgram
 > generateStmtBlock stmts = do
 >   pushScope
 >   generateStmtBlock' stmts
->   where generateStmtBlock' [] = popScope
+>   where generateStmtBlock' [] = do write "nop"; popScope
 >         generateStmtBlock' (stmt:stmts) = do
 >           generateStmt stmt
 >           generateStmtBlock' stmts
