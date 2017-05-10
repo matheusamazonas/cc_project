@@ -302,15 +302,15 @@ list: TF = (__print_list, TF_element)
 tuple: TF = (__print_tuple, (TF_fst, TF_snd))
 
 > typeFrame :: String -> GramType -> Environment ()
-> typeFrame fname (GramBasicType _ CharType) = write "ldc __" ++ fname ++ "_char\nldc 0\nstmh 2"
-> typeFrame fname (GramBasicType _ IntType)  = write "ldc __" ++ fname ++ "_int\nldc 0\nstmh 2"
-> typeFrame fname (GramBasicType _ BoolType) = write "ldc __" ++ fname ++ "_bool\nldc 0\nstmh 2"
+> typeFrame fname (GramBasicType _ CharType) = write $ "ldc __" ++ fname ++ "_char\nldc 0\nstmh 2"
+> typeFrame fname (GramBasicType _ IntType)  = write $ "ldc __" ++ fname ++ "_int\nldc 0\nstmh 2"
+> typeFrame fname (GramBasicType _ BoolType) = write $ "ldc __" ++ fname ++ "_bool\nldc 0\nstmh 2"
 > typeFrame fname (GramListType _ t) = do
->   write "ldc __" ++ fname ++ "_list"
+>   write $ "ldc __" ++ fname ++ "_list"
 >   typeFrame fname t
 >   write "stmh 2"
 > typeFrame fname (GramTupleType _ t1 t2) = do
->   write "ldc __" ++ fname ++ "_tuple"
+>   write $ "ldc __" ++ fname ++ "_tuple"
 >   typeFrame fname t1
 >   typeFrame fname t2
 >   write "stmh 2\nstmh 2"
