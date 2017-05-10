@@ -4,13 +4,15 @@
 > import Control.Monad.Writer
 > import Grammar
 > import Token
-> import Data.Char
+> import Data.Char (ord)
+> import Data.List (genericLength)
+
 
 > type Depth = Integer
 > type Id = String
 > type Code = String
 > type Scope = [(Id, Depth)]
-> type EnvType = (Depth, [Scope],Int)
+> type EnvType = (Depth, [Scope], Int)
 
 > type Environment = WriterT Code (State EnvType)
 
@@ -22,7 +24,12 @@ Call with, e.g., run generateStmtBlock stmts, with stmts :: [GramStmt]
 Once implemented, generate = run generateGram
 
 > generate :: Gram -> Code
-> generate = run generateGram 
+> generate = run generateProgram 
+
+> generateProgram :: Gram -> Environment ()
+> generateProgram g = do 
+>   write "bra main"
+>   generateGram g
 
 
 > -- WARNING this is a way to test and evaluate expressions 
@@ -38,12 +45,47 @@ Once implemented, generate = run generateGram
 >       generateExpr e 
 >       generateGram xs
 >       write debug -- WARNING THIS IS ADDED AFTER EVERY CALL
->   GramDeclFun fundecl -> generateGram xs
+>   GramDeclFun fundecl -> do
+>     generateFunDecl fundecl
+>     generateGram xs
 
 > debug = "\n; debug\n" ++ "trap 0"
 
+> addArgs :: [GramId] -> Environment ()
+> addArgs args = do
+>   let c = genericLength args
+>   addArgs' args (-2) -- c == MP and c-1 holds the return address. Hence c-2
+>   where
+>     addArgs' [] _ = do return ()
+>     addArgs' ((Id _ argId):as) argC = do
+>       addArg argId argC
+>       addArgs' as (argC-1)
 
+> getFuncReturnType :: [GramFunType] -> GramRetType
+> getFuncReturnType ((GramFunType _ ret):_) = ret
 
+> generateFunDecl :: GramFuncDecl -> Environment ()
+> generateFunDecl (GramFuncDecl (Id _ funId) (GramFuncDeclTail args types stmts)) = do
+>   pushScope
+>   label funId
+>   let argCounter = length args
+>   if funId /= "main" then write $ "link " ++ show argCounter else return ()
+>   addArgs args
+>   generateStmtBlock stmts
+>   case getFuncReturnType types of
+>     (GramVoidType _) -> if funId /= "main" then write "unlink\nret" else return ()
+>     otherwise -> do return ()
+>   write "trap 0"
+>   write "halt"
+
+> generateFunCall :: GramFunCall -> Environment ()
+> generateFunCall (GramOverloadedFunCall _ (Id _ funId) args) = do
+>   let rev_args = reverse args
+>   sequence $ map generateExpr rev_args
+>   write $ "bsr " ++ show funId
+> generateFunCall (GramFunCall (Id _ funId) rev_args) = do
+>   sequence $ map generateExpr rev_args
+>   write $ "bsr " ++ show funId
 
 > generateStmtBlock :: [GramStmt] -> Environment ()
 > generateStmtBlock stmts = do
@@ -56,24 +98,29 @@ Once implemented, generate = run generateGram
 
 > generateStmt :: GramStmt -> Environment ()
 > generateStmt (GramWhile _ expr stmts) = do
->   label "while_start"
+>   wStart <- genLabel "while_start"
+>   wEnd <- genLabel "while_end"
+>   label wStart
 >   generateExpr expr
->   write "brf while_end"
+>   write $ "brf " ++ wEnd
 >   generateStmtBlock stmts
->   write "bra while_start"
->   label "while_end"
+>   write $ "bra " ++ wStart
+>   label wEnd
 > generateStmt (GramIf _ expr thenStmts elseStmts) = do
+>   labelElse <- genLabel "else"
+>   labelIf <- genLabel "if"
+>   labelFi <- genLabel "fi"
 >   generateExpr expr
->   write "brf else"
+>   write $ "brf " ++ labelElse
 >   generateStmtBlock thenStmts 
->   write "bra fi"
->   label "else" 
+>   write $ "bra " ++ labelFi
+>   label labelElse 
 >   generateStmtBlock elseStmts
->   label "fi"
+>   label labelFi
 > generateStmt (GramReturn _ (Nothing)) = write "unlink\nret"
 > generateStmt (GramReturn _ (Just expr)) = do
 >   generateExpr expr
->   write "unlink\nret"
+>   write "str RR\nunlink\nsts -1\nret"
 > generateStmt (GramFunVarDecl (GramVarDeclType t (GramVarDeclTail (Id _ varId) expr))) = do
 >   addVar varId
 >   generateExpr expr
@@ -110,6 +157,9 @@ Once implemented, generate = run generateGram
 > generateExpr (GramExpId (Var (Id _ varId) fields)) = do
 >   varLoc <- lookupVar varId
 >   write $ "ldl " ++ show varLoc
+> generateExpr (GramExpFunCall funCall) = do
+>   generateFunCall funCall
+>   write "ldr RR"
 
 > generateBinaryOperation :: Operation -> String
 > generateBinaryOperation Minus           = "sub"
@@ -200,6 +250,11 @@ Variable handlers
 > addVar id = do
 >   (d, (s:ss), i) <- get
 >   put (d+1, ((id, d):s):ss, i)
+
+> addArg :: Id -> Integer -> Environment ()
+> addArg varId id = do
+>   (d, (s:ss), i) <- get
+>   put (d, ((varId, id):s):ss, i)
 
 > lookupVar :: Id -> Environment Depth
 > lookupVar varId = do
