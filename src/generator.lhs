@@ -12,8 +12,8 @@
 > type Depth = Integer
 > type Id = String
 > type Code = String
-> type Scope = [(Id, (Code, Code))]
-> type EnvType = (Depth, [Scope], Int)
+> type Scope = (Depth, [(Id, (Code, Code))])
+> type EnvType = ([Scope], Int)
 
 > type Environment = WriterT Code (State EnvType)
 
@@ -78,7 +78,8 @@ Once implemented, generate = run generateProgram
 >   if funId == "main" then do
 >     write "trap 0"
 >     write "halt"
->   else do return ()
+>   else do 
+>     write "unlink\nret"
 
 > generateFunCall :: GramFunCall -> Environment ()
 > generateFunCall (GramOverloadedFunCall ts (Id _ funId) args) = do
@@ -343,13 +344,13 @@ Scope handlers
 
 > pushScope :: Environment ()
 > pushScope = do
->   (d, ss, i) <- get
->   put (d, []:ss, i)
+>   (ss, i) <- get
+>   put ((1,[]):ss, i)
 
 > popScope :: Environment ()
 > popScope = do
->   (d, s:ss, i) <- get
->   put (d, ss, i)
+>   (s:ss, i) <- get
+>   put (ss, i)
 
 
 
@@ -357,26 +358,26 @@ Variable handlers
 
 > addVar :: Id -> Environment ()
 > addVar id = do
->   (d, (s:ss), i) <- get
+>   (((d,v):ss), i) <- get
 >   let loadIns = "ldl " ++ show d
 >       storeIns = "stl " ++ show d
->   put (d+1, ((id, (loadIns, storeIns)):s):ss, i)
+>   put ((d+1,(id, (loadIns, storeIns)):v):ss, i)
 
 > addArg :: Id -> Integer -> Environment ()
 > addArg varId id = do
->   (d, (s:ss), i) <- get
+>   (((d,v):ss), i) <- get
 >   let loadIns = "ldl " ++ show id
 >       storeIns = "stl " ++ show id
->   put (d, ((varId, (loadIns, storeIns)):s):ss, i)
+>   put ((d,(varId, (loadIns, storeIns)):v):ss, i)
 
 > lookupVar :: Id -> Environment (Code, Code)
 > lookupVar varId = do
->   (_, ss, _) <- get
+>   (ss, _) <- get
 >   return $ lookupVar' varId ss
 >   where lookupVar' _ [] = ("ldl " ++ show (-999), "stl " ++ show(-999))
->         lookupVar' varId (s:ss) =
->           case lookup varId s of
->             Nothing -> lookupVar' varId ss
+>         lookupVar' varId ((_,v):vs) =
+>           case lookup varId v of
+>             Nothing -> lookupVar' varId vs
 >             Just d -> d
 
 
@@ -384,8 +385,8 @@ Label handlers
 
 > genLabel :: String -> Environment String
 > genLabel s = do
->   (d, ss, i) <- get
->   put (d, ss, i+1)
+>   (ss, i) <- get
+>   put (ss, i+1)
 >   return $ s ++ "_" ++ show i
 
 
@@ -401,4 +402,4 @@ Environment handlers
 > write c = tell (c ++ "\n")
 
 > initEnv :: EnvType
-> initEnv = (1, [[]], 1)
+> initEnv = ([(1,[])], 1)
