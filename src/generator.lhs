@@ -29,22 +29,38 @@ Once implemented, generate = run generateProgram
 
 > generateProgram :: Gram -> Environment ()
 > generateProgram g = do 
+>   write "bra __init"
+>   let (globals, funcs) = sepDecls g
+>   sequence $ map addGlobal $ map getVarId globals
+>   sequence $ replicate (length globals) $ write "nop"
+>   sequence $ map generateFunDecl funcs
+>   label "__init"
+>   sequence $ map generateVariable globals
 >   write "bra main"
->   generateGram g
 >   sequence_ builtins
 
+> sepDecls :: [GramDecl] -> ([GramVarDecl], [GramFuncDecl])
+> sepDecls [] = ([], [])
+> sepDecls ((GramDeclVar d):ds) = (d:vars, funcs)
+>   where
+>     (vars, funcs) = sepDecls ds
+> sepDecls ((GramDeclFun d):ds) = (vars, d:funcs)
+>   where
+>     (vars, funcs) = sepDecls ds
 
-> generateGram :: Gram -> Environment ()
-> generateGram [] = return ()
-> generateGram (x:xs) = case x of
->   GramDeclVar vardecl -> case vardecl of
->     GramVarDeclType t (GramVarDeclTail id@(Id p i) e) -> do -- type checker ensures only typed variable declarations
->       write $ "; define " ++ i
->       generateExpr e -- TODO global variable declarations
->       generateGram xs
->   GramDeclFun fundecl -> do
->     generateFunDecl fundecl
->     generateGram xs
+> getVarId :: GramVarDecl -> String
+> getVarId (GramVarDeclType _ (GramVarDeclTail (Id _ varId) _)) = varId
+> getVarId (GramVarDeclVar (GramVarDeclTail (Id _ varId) _)) = varId
+
+> generateVariable :: GramVarDecl -> Environment ()
+> generateVariable (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr)) = do
+>   generateExpr expr
+>   (_, store) <- lookupVar varId
+>   write store
+> generateVariable (GramVarDeclType _ (GramVarDeclTail (Id _ varId) expr)) = do
+>   generateExpr expr
+>   (_, store) <- lookupVar varId
+>   write store
 
 > builtins = let und = undefined in
 >   [polyBuildIn generatePrint,
@@ -81,12 +97,20 @@ Once implemented, generate = run generateProgram
 >   else do 
 >     write "unlink\nret"
 
+> genVarDecl :: GramVarDecl -> Environment ()
+> genVarDecl (GramVarDeclType varType (GramVarDeclTail (Id _ varId) expr)) = do
+>   addVar varId
+>   generateExpr expr
+> genVarDecl (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr)) = do
+>   addVar varId
+>   generateExpr expr
+
 > generateFunCall :: GramFunCall -> Environment ()
 > generateFunCall (GramOverloadedFunCall ts (Id _ funId) args) = do
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
 >   if funId == "print" then callPrint $ head ts
->   else write $ "bsr " ++ show funId
+>   else write $ "bsr " ++ funId
 
 > generateStmtBlock :: [GramStmt] -> Environment ()
 > generateStmtBlock stmts = do
@@ -358,6 +382,13 @@ Variable handlers
 >   (((d,v):ss), i) <- get
 >   let loadIns = "ldl " ++ show d
 >       storeIns = "stl " ++ show d
+>   put ((d+1,(id, (loadIns, storeIns)):v):ss, i)
+
+> addGlobal :: Id -> Environment ()
+> addGlobal id = do
+>   (((d,v):ss), i) <- get
+>   let loadIns = "ldc " ++ show (d+1) ++ "\nlda 0"
+>       storeIns = "ldc " ++ show (d+1) ++ "\nsta 0"
 >   put ((d+1,(id, (loadIns, storeIns)):v):ss, i)
 
 > addArg :: Id -> Integer -> Environment ()
