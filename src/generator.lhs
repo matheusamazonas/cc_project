@@ -69,14 +69,16 @@ Once implemented, generate = run generateGram
 >   pushScope
 >   label funId
 >   let argCounter = length args
->   if funId /= "main" then write $ "link " ++ show argCounter else return ()
+>   if funId /= "main" then write $ "link 0" else return ()
 >   addArgs args
 >   generateStmtBlock stmts
 >   case getFuncReturnType types of
 >     (GramVoidType _) -> if funId /= "main" then write "unlink\nret" else return ()
 >     otherwise -> do return ()
->   write "trap 0"
->   write "halt"
+>   if funId == "main" then do
+>     write "trap 0"
+>     write "halt"
+>   else do return ()
 
 > generateFunCall :: GramFunCall -> Environment ()
 > generateFunCall (GramOverloadedFunCall _ (Id _ funId) args) = do
