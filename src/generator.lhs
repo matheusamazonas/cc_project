@@ -80,6 +80,10 @@ Once implemented, generate = run generateGram
 > generateStmt (GramFunVarDecl (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr))) = do
 >   addVar varId
 >   generateExpr expr
+> generateStmt (GramAttr _ (Var (Id _ varId) fields) expr) = do
+>   varLoc <- lookupVar varId
+>   generateExpr expr
+>   write $ "stl " ++ show varLoc
 
 
 > generateExpr :: GramExp -> Environment ()
