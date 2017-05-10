@@ -1,6 +1,6 @@
 > module Generator where
 
-> import Control.Monad (mapM_,sequence_)
+> import Control.Monad
 > import Control.Monad.State
 > import Control.Monad.Writer
 > import Grammar
@@ -47,9 +47,9 @@ Once implemented, generate = run generateProgram
 >     generateGram xs
 
 > builtins = let und = undefined in
->   [generatePrint (GramListType und und), generatePrint (GramTupleType und und und), 
->    generatePrint (GramBasicType und IntType), generatePrint (GramBasicType und BoolType),
->    generatePrint (GramBasicType und CharType), runTimeException "__exc_untyped_variable" "Runtime exception: could not resolve overloading for print"]
+>   [polyBuildIn generatePrint,
+>    polyBuildIn generateEquals,
+>    runTimeException "__exc_untyped_variable" "Runtime exception: could not resolve overloading for print"]
 
 > addArgs :: [GramId] -> Environment ()
 > addArgs args = do
@@ -180,54 +180,11 @@ Once implemented, generate = run generateProgram
 > generateUnaryOperation LogicalNot       = "not"
 
 > generateOverloadedOperation :: GramType -> Operation -> Environment () -- environment used for type variable bindings later
-> generateOverloadedOperation t op = do
->   lab  <- genLabel "overl_eq"
->   write $ "bra " ++ lab
->   call <- equals t
->   label lab
->   case op of
->     Equals    -> write call
->     Different -> do
->       write call
->       write "not"
->   where equals :: GramType -> Environment String
->         equals (GramBasicType _ BoolType) = return "eq"
->         equals (GramBasicType _ CharType) = return "eq"
->         equals (GramBasicType _ IntType)  = return "eq"
->         equals (GramTupleType _ t1 t2) = do
->           teq  <- genLabel "tuple_eq"
->           teqp <- genLabel "tuple_eq_post"
->           call1 <- equals t1 
->           call2 <- equals t2
->           
->           write $ teq ++ ": lds -2\nldh -1\nlds -2\nldh -1" -- load left elements
->           write call1
->           write $ "lds 0\nbrf " ++ teqp -- shortcut in case of non-equality
->           write "lds -3\nldh 0\nlds -3\nldh 0" -- load right elements
->           write call2
->           write "and"
->           write $ teqp ++ ": str RR\nret" -- pop all but True/False result
->           return $ "bsr " ++ teq ++ "\najs -2\nldr RR"
->         equals (GramListType _ t) = do
->           leq     <- genLabel "list_eq"
->           leqn1   <- genLabel "list_eq_null_1"
->           leqn2   <- genLabel "list_eq_null_2"
->           leqp    <- genLabel "list_eq_post"
->           innercall <- equals t 
->           
->           write $ leq ++ ": lds -2\nlds -2\nbrf " ++ leqn1 ++ "\nbrf " ++ leqn2 -- check for null lists (base case)
->           write $ "lds -2\nldh 0\nlds -2\nldh 0\nbsr " ++ leq ++ "\najs -2" -- recurse through tails
->           write $ "ldr RR\nbrf " ++ leqp -- shortcut in case of non-equality
->           write $ "lds -2\nldh -1\nlds -2\nldh -1" -- load heads
->           write innercall -- inner call
->           write $ "str RR\nret"
->           write $ leqn2 ++ ": ldc 0\nstr RR\nbra " ++ leqp -- first list empty - return isEmpty(2nd list)
->           write $ leqn1 ++ ": ldc 0\neq\nstr RR" -- first list non-empty, second list empty - return false
->           write $ leqp ++ ": ret"
->           return $ "bsr " ++ leq ++ "\najs -2\nldr RR"
->         equals (GramIdType id) = return "halt" -- TODO look up type vars for overloading
-
-
+> generateOverloadedOperation t op = case op of
+>   Equals    -> callEquals t
+>   Different -> do
+>     callEquals t
+>     write "not"
 
 
 Overloading handlers
@@ -282,10 +239,50 @@ Overloading handlers
 >   write "ret"   
 
 
+> callEquals :: GramType -> Environment ()
+> callEquals (GramBasicType _ CharType) = write "eq"
+> callEquals (GramBasicType _ IntType) = write "eq"
+> callEquals (GramBasicType _ BoolType) = write "bsr __eq_bool\nldr RR"
+> callEquals (GramListType _ t) = do
+>   typeFrame "eq" t
+>   write "lds -2\nlds -2\nbsr __eq_list\najs -5\nldr RR"
+> callEquals (GramTupleType _ t1 t2) = do
+>   typeFrame "eq" t1
+>   typeFrame "eq" t2
+>   write "stmh 2\nlds -2\nlds -2\nbsr __eq_tuple\najs -5\nldr RR"
+> callEquals (GramIdType _) = write "bsr __exc_untyped_variable"
 
 
+> generateEquals :: GramType -> Environment ()
+> generateEquals (GramBasicType _ CharType) = write "__eq_char: lds -2\nlds -2\neq\nstr RR\nret"
+> generateEquals (GramBasicType _ IntType)  = write "__eq_int: lds -2\nlds -2\neq\nstr RR\nret"
+> generateEquals (GramBasicType _ BoolType) = do
+>   write "__eq_bool: lds -2\nldc 0\nne\nlds -2\nldc 0\nne" -- convert to "unequal to zero" representation as -1 and 1 are both used by SSM
+>   write "eq\nstr RR\nret"
+> generateEquals (GramListType _ _) = do
+>   write "__eq_list: lds -2\nlds -2\nbrf __eq_list_null1\nbrf __eq_list_retfalse" -- check for null lists (base case)
+>   write "lds -3\nldh 0" -- load inner type frame
+>   write "lds -3\nldh -1\nlds -3\nldh -1" -- load both heads
+>   write "lds -6\nldh -1\njsr\najs -3\nldr RR\nbrf __eq_list_retfalse" -- compare heads
+>   write "lds -3\nlds -3\nldh 0\nlds -3\nldh 0" -- copy type frame and list tails
+>   write "bsr __eq_list\najs -3\nret" -- recursive call on tails
+>   write "__eq_list_null1: ldc 0\neq\nbra __eq_list_post" -- first list empty - return isEmpty(second list)
+>   write "__eq_list_retfalse: ldc 0" -- first list non-empty, second empty - return false
+>   write "__eq_list_post: str RR\nret"
+> generateEquals (GramTupleType _ _ _) = do
+>   write "__eq_tuple: lds -3\nldh -1\nldh 0" -- load left element's type frame
+>   write "lds -3\nldh -1\nlds -3\nldh -1" -- load both left elements
+>   write "lds -6\nldh -1\nldh -1\njsr\najs -3\nldr RR\nbrf __eq_tuple_retfalse" -- compare left elements
+>   write "lds -3\nldh 0\nldh 0" -- load right element's type frame
+>   write "lds -3\nldh 0\nlds -3\nldh 0" -- load both right elements
+>   write "lds -6\nldh 0\nldh -1\njsr\najs -3\nret" -- compare right elements
+>   write "__eq_tuple_retfalse: ldc 0\nstr RR\nret"
 
-
+> polyBuildIn :: (GramType -> Environment ()) -> Environment ()
+> polyBuildIn f = let und = undefined in 
+>   let types = [GramBasicType und CharType, GramBasicType und IntType, GramBasicType und BoolType, 
+>                GramListType und und, GramTupleType und und und] in
+>				   mapM_ f types
 
 
 Type frame handlers
