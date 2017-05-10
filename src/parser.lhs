@@ -3,7 +3,7 @@
 > import Text.ParserCombinators.Parsec.Prim hiding (satisfy)
 > import Text.Parsec.Pos (SourcePos, newPos)
 > import Text.Parsec.Error (ParseError)
-> import Text.Parsec.Combinator (optional, optionMaybe, many1, chainl1, chainl, sepEndBy, eof)
+> import Text.Parsec.Combinator (optional, optionMaybe, many1, chainl1, chainl, sepEndBy, sepBy, eof)
 > import Control.Monad (void)
 > import Control.Applicative ((<$>))
 > import Data.Maybe (maybeToList)
@@ -167,20 +167,6 @@ Grammar: FTypes = Type [ FTypes ]
 >   let fTypes = maybeToList opt in
 >     return $ GramFTypes t fTypes
 
-Parser for function arguments
-Grammar: FArgs = id [ ',' FArgs ]
-
-> pFArgs :: MyParser GramFArgs
-> pFArgs = do
->   (Id i p) <- pId
->   opt <- optionMaybe $ pOpt
->   let args = maybeToList opt in
->     return $ GramFArgsId (Id i p) args 
->   where 
->     pOpt = do
->       void $ isToken TokenComma
->       fArgs <- pFArgs
->       return fArgs
 
 Parser for arguments list. Used on function calls (Expr8)
 Grammar: ArgList = '(' [ ActArgs ] ')'
@@ -554,17 +540,21 @@ the corrent GramDecl with it.
 >   void $ isToken TokenEOL
 >   return $ GramVarDeclTail (Id i p) expr 
 
+> pFuncArgs :: MyParser [GramId]
+> pFuncArgs = do
+>   args <- sepBy pId (isToken TokenComma) 
+>   return args
+
 > pFuncDeclTail :: MyParser GramFuncDeclTail
 > pFuncDeclTail = do
 >   void $ isToken TokenOpenP
->   optFArgs <- optionMaybe pFArgs
+>   args <- pFuncArgs
 >   void $ isToken TokenCloseP
 >   optFunType <- optionMaybe pOptType
 >   void $ isToken TokenOpenCurlyB
 >   stmts <- many pStmt
 >   void $ isToken TokenCloseCurlyB
->   let args = maybeToList optFArgs
->       fType = maybeToList optFunType in 
+>   let fType = maybeToList optFunType in 
 >       return $ GramFuncDeclTail args fType stmts
 >   where
 >     pOptType = do

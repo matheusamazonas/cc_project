@@ -187,7 +187,7 @@ with type annotations in /*comments*/
 >   unify p vfun tfun
 >   convert vfun
 >   where listArgs [] = return []
->         listArgs [GramFArgsId _ fargs] = do
+>         listArgs (_:fargs) = do
 >           v <- fresh
 >           arglist <- listArgs fargs
 >           return $ v:arglist
@@ -201,7 +201,7 @@ with type annotations in /*comments*/
 >   unify p vfun tfun
 >   convert vfun
 >   where listArgs [] = return []
->         listArgs [GramFArgsId (Id p _) fargs] = do
+>         listArgs (_:fargs) = do
 >           v <- fresh
 >           arglist <- listArgs fargs
 >           return $ v:arglist
@@ -267,7 +267,7 @@ with type annotations in /*comments*/
 >       else throwError ("Non-void function contains non-returning code paths: " ++ i, p)
 >   return $ GramFuncDecl id $ GramFuncDeclTail fargs ftypes stmts
 >   where declareArgs [] _ = return ()
->         declareArgs [GramFArgsId aid fargs] ai = do
+>         declareArgs (aid:fargs) ai = do
 >           addToScope aid ai
 >           declareArgs fargs (ai+1)
 

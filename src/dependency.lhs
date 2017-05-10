@@ -44,7 +44,7 @@ Does not support higher-order functions.
 > funcDeps :: GramFuncDeclTail -> [String]
 > funcDeps (GramFuncDeclTail fargs _ stmts) = blockDeps (argList fargs) stmts
 >   where argList [] = []
->         argList [GramFArgsId (Id _ argname) fargs] = argname : argList fargs
+>         argList (Id _ argname:fargs) = argname : argList fargs
 
 > blockDeps :: [String] -> [GramStmt] -> [String]
 > blockDeps _ [] = []

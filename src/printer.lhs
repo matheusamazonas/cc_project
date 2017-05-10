@@ -57,10 +57,10 @@
 
 > printFuncDeclTail :: Int -> GramFuncDeclTail -> String
 > printFuncDeclTail i (GramFuncDeclTail args [] stmts) = 
->           tb i ++  "(" ++ printMany printFArgs 0 args ++ ")\n{\n"
+>           tb i ++  "(" ++ printFArgs 0 args ++ ")\n{\n"
 >           ++ printMany printStmt 1 stmts ++ "}"
 > printFuncDeclTail i (GramFuncDeclTail args funTypes stmts) = 
->           tb i ++  "(" ++ printMany printFArgs 0 args ++ ")"
+>           tb i ++  "(" ++ printFArgs 0 args ++ ")"
 >           ++ " :: " ++ printMany printFunType 0 funTypes ++ "\n{\n"
 >           ++ printMany printStmt 1 stmts ++ "}"
 
@@ -87,9 +87,10 @@
 > printBasicType i BoolType = tb i ++ "Bool"
 > printBasicType i CharType = tb i ++ "Char"
 
-> printFArgs :: Int -> GramFArgs -> String
-> printFArgs i (GramFArgsId (Id _ s) []) = tb i ++ s 
-> printFArgs i (GramFArgsId (Id _ s) fArgs) = tb i ++ s ++ ", " ++ printMany printFArgs 0 fArgs
+> printFArgs :: Int -> [GramId] -> String
+> printFArgs i [] = ""
+> printFArgs i ((Id _ a):[]) = tb i ++ a
+> printFArgs i ((Id _ a):as) = tb i ++ a ++ ", " ++ printFArgs 0 as
 
 > printStmt :: Int -> GramStmt -> String
 > printStmt i (GramIf _ expr ifS elseS) = printIf i expr ifS elseS 

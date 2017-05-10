@@ -32,10 +32,6 @@
 >    | GramListType SourcePos GramType 
 >   deriving (Show, Eq)
 
-> data GramFArgs = 
->      GramFArgsId GramId [GramFArgs]
->   deriving (Show, Eq)
-
 > data GramExp = 
 >      GramBool SourcePos Bool 
 >    | GramChar SourcePos Char 
@@ -80,7 +76,7 @@
 >   deriving (Show, Eq)
 
 > data GramFuncDeclTail = 
->      GramFuncDeclTail [GramFArgs] [GramFunType] [GramStmt]
+>      GramFuncDeclTail [GramId] [GramFunType] [GramStmt]
 >   deriving (Show, Eq)
 
 > data GramFuncDecl = 
