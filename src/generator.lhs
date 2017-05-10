@@ -12,8 +12,8 @@
 > type Depth = Integer
 > type Id = String
 > type Code = String
-> type Scope = [(Id, Depth)]
-> type EnvType = (Depth, [Scope], Int)
+> type Scope = (Depth, [(Id, (Code, Code))])
+> type EnvType = ([Scope], Int)
 
 > type Environment = WriterT Code (State EnvType)
 
@@ -78,7 +78,8 @@ Once implemented, generate = run generateProgram
 >   if funId == "main" then do
 >     write "trap 0"
 >     write "halt"
->   else do return ()
+>   else do 
+>     write "unlink\nret"
 
 > generateFunCall :: GramFunCall -> Environment ()
 > generateFunCall (GramOverloadedFunCall ts (Id _ funId) args) = do
@@ -128,9 +129,10 @@ Once implemented, generate = run generateProgram
 >   addVar varId
 >   generateExpr expr
 > generateStmt (GramAttr _ (Var (Id _ varId) fields) expr) = do
->   varLoc <- lookupVar varId
+>   (_, load) <- lookupVar varId
 >   generateExpr expr
->   write $ "stl " ++ show varLoc
+>   write load
+> generateStmt (GramStmtFunCall funCall) = do generateFunCall funCall
 
 
 > generateExpr :: GramExp -> Environment ()
@@ -155,8 +157,8 @@ Once implemented, generate = run generateProgram
 >   generateExpr expr
 >   write $ generateUnaryOperation op
 > generateExpr (GramExpId (Var (Id _ varId) fields)) = do
->   varLoc <- lookupVar varId
->   write $ "ldl " ++ show varLoc
+>   (store, _) <- lookupVar varId
+>   write store
 > generateExpr (GramExpFunCall funCall) = do
 >   generateFunCall funCall
 >   write "ldr RR"
@@ -339,13 +341,13 @@ Scope handlers
 
 > pushScope :: Environment ()
 > pushScope = do
->   (d, ss, i) <- get
->   put (d, []:ss, i)
+>   (ss, i) <- get
+>   put ((1,[]):ss, i)
 
 > popScope :: Environment ()
 > popScope = do
->   (d, s:ss, i) <- get
->   put (d, ss, i)
+>   (s:ss, i) <- get
+>   put (ss, i)
 
 
 
@@ -353,22 +355,26 @@ Variable handlers
 
 > addVar :: Id -> Environment ()
 > addVar id = do
->   (d, (s:ss), i) <- get
->   put (d+1, ((id, d):s):ss, i)
+>   (((d,v):ss), i) <- get
+>   let loadIns = "ldl " ++ show d
+>       storeIns = "stl " ++ show d
+>   put ((d+1,(id, (loadIns, storeIns)):v):ss, i)
 
 > addArg :: Id -> Integer -> Environment ()
 > addArg varId id = do
->   (d, (s:ss), i) <- get
->   put (d, ((varId, id):s):ss, i)
+>   (((d,v):ss), i) <- get
+>   let loadIns = "ldl " ++ show id
+>       storeIns = "stl " ++ show id
+>   put ((d,(varId, (loadIns, storeIns)):v):ss, i)
 
-> lookupVar :: Id -> Environment Depth
+> lookupVar :: Id -> Environment (Code, Code)
 > lookupVar varId = do
->   (_, ss, _) <- get
+>   (ss, _) <- get
 >   return $ lookupVar' varId ss
->   where lookupVar' _ [] = -999
->         lookupVar' varId (s:ss) =
->           case lookup varId s of
->             Nothing -> lookupVar' varId ss
+>   where lookupVar' _ [] = ("ldl " ++ show (-999), "stl " ++ show(-999))
+>         lookupVar' varId ((_,v):vs) =
+>           case lookup varId v of
+>             Nothing -> lookupVar' varId vs
 >             Just d -> d
 
 
@@ -376,8 +382,8 @@ Label handlers
 
 > genLabel :: String -> Environment String
 > genLabel s = do
->   (d, ss, i) <- get
->   put (d, ss, i+1)
+>   (ss, i) <- get
+>   put (ss, i+1)
 >   return $ s ++ "_" ++ show i
 
 
@@ -393,4 +399,4 @@ Environment handlers
 > write c = tell (c ++ "\n")
 
 > initEnv :: EnvType
-> initEnv = (1, [[]], 1)
+> initEnv = ([(1,[])], 1)
