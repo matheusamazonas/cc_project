@@ -81,13 +81,11 @@ Once implemented, generate = run generateProgram
 >   else do return ()
 
 > generateFunCall :: GramFunCall -> Environment ()
-> generateFunCall (GramOverloadedFunCall _ (Id _ funId) args) = do
+> generateFunCall (GramOverloadedFunCall ts (Id _ funId) args) = do
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
->   write $ "bsr " ++ show funId
-> generateFunCall (GramFunCall (Id _ funId) rev_args) = do
->   sequence $ map generateExpr rev_args
->   write $ "bsr " ++ show funId
+>   if funId == "print" then callPrint $ head ts
+>   else write $ "bsr " ++ show funId
 
 > generateStmtBlock :: [GramStmt] -> Environment ()
 > generateStmtBlock stmts = do
@@ -234,45 +232,18 @@ Once implemented, generate = run generateProgram
 
 Overloading handlers
 
-
-A type frame is generated during a print call.
-This contains information about which print methods should be used during execution.
-In particular, types containing types (e.g., lists and tuples) use this information
-to determine at runtime which print functions should be called for their elements.
-
-A type frame is a tuple defined as follows.
-Here, TF_element, TF_fst and TF_snd are type frames for the contained types.
-int/char/bool: TF = (__print_char/int/bool, null)
-list: TF = (__print_list, TF_element)
-tuple: TF = (__print_tuple, (TF_fst, TF_snd))
-
 > callPrint :: GramType -> Environment ()
 > callPrint (GramBasicType _ CharType) = write "bsr __print_char"
 > callPrint (GramBasicType _ IntType)  = write "bsr __print_int"
 > callPrint (GramBasicType _ BoolType) = write "bsr __print_bool"
 > callPrint (GramListType _ t) = do
->   printFrame t
+>   typeFrame "print" t
 >   write "lds -1\nbsr __print_list"
 > callPrint (GramTupleType _ t1 t2) = do
->   printFrame t1
->   printFrame t2
+>   typeFrame "print" t1
+>   typeFrame "print" t2
 >   write "stmh 2\nlds -1\nbsr __print_tuple"
 > callPrint (GramIdType _) = write "bsr __exc_untyped_variable"
-
-> printFrame :: GramType -> Environment ()
-> printFrame (GramBasicType _ CharType) = write "ldc __print_char\nldc 0\nstmh 2"
-> printFrame (GramBasicType _ IntType)  = write "ldc __print_int\nldc 0\nstmh 2"
-> printFrame (GramBasicType _ BoolType) = write "ldc __print_bool\nldc 0\nstmh 2"
-> printFrame (GramListType _ t) = do
->   write "ldc __print_list"
->   printFrame t
->   write "stmh 2"
-> printFrame (GramTupleType _ t1 t2) = do
->   write "ldc __print_tuple"
->   printFrame t1
->   printFrame t2
->   write "stmh 2\nstmh 2"
-> printFrame (GramIdType _) = write "ldc __exc_untyped_variable\nldc 0\nstmh 2"
 
 > generatePrint :: GramType -> Environment ()
 > generatePrint (GramBasicType _ CharType) = write "__print_char: lds -1\ntrap 1\nret"
@@ -310,6 +281,40 @@ tuple: TF = (__print_tuple, (TF_fst, TF_snd))
 >   printChar ')'
 >   write "ret"   
 
+
+
+
+
+
+
+
+Type frame handlers
+
+A type frame is generated during an overloaded operation such as (==) or print.
+This contains information about which print methods should be used during execution.
+In particular, types containing types (e.g., lists and tuples) use this information
+to determine at runtime which print functions should be called for their elements.
+
+A type frame is a tuple defined as follows.
+Here, TF_element, TF_fst and TF_snd are type frames for the contained types.
+int/char/bool: TF = (__print_char/int/bool, null)
+list: TF = (__print_list, TF_element)
+tuple: TF = (__print_tuple, (TF_fst, TF_snd))
+
+> typeFrame :: String -> GramType -> Environment ()
+> typeFrame fname (GramBasicType _ CharType) = write "ldc __" ++ fname ++ "_char\nldc 0\nstmh 2"
+> typeFrame fname (GramBasicType _ IntType)  = write "ldc __" ++ fname ++ "_int\nldc 0\nstmh 2"
+> typeFrame fname (GramBasicType _ BoolType) = write "ldc __" ++ fname ++ "_bool\nldc 0\nstmh 2"
+> typeFrame fname (GramListType _ t) = do
+>   write "ldc __" ++ fname ++ "_list"
+>   typeFrame fname t
+>   write "stmh 2"
+> typeFrame fname (GramTupleType _ t1 t2) = do
+>   write "ldc __" ++ fname ++ "_tuple"
+>   typeFrame fname t1
+>   typeFrame fname t2
+>   write "stmh 2\nstmh 2"
+> typeFrame _ (GramIdType _) = write "ldc __exc_untyped_variable\nldc 0\nstmh 2"
 
 
 
