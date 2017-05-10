@@ -131,6 +131,7 @@ Once implemented, generate = run generateProgram
 >   varLoc <- lookupVar varId
 >   generateExpr expr
 >   write $ "stl " ++ show varLoc
+> generateStmt (GramStmtFunCall funCall) = do generateFunCall funCall
 
 
 > generateExpr :: GramExp -> Environment ()
