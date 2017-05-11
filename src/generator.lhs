@@ -65,6 +65,7 @@ Once implemented, generate = run generateProgram
 > builtins = let und = undefined in
 >   [polyBuildIn generatePrint,
 >    polyBuildIn generateEquals,
+>    runTimeException "__exc_empty_list_traversal" "Runtime exception: empty list traversed",
 >    runTimeException "__exc_untyped_variable" "Runtime exception: could not resolve overloading for print"]
 
 > addArgs :: [GramId] -> Environment ()
@@ -153,9 +154,10 @@ Once implemented, generate = run generateProgram
 >   addVar varId
 >   generateExpr expr
 > generateStmt (GramAttr _ (Var (Id _ varId) fields) expr) = do
->   (_, store) <- lookupVar varId
+>   (load, store) <- lookupVar varId
 >   generateExpr expr
->   write store
+>   write load
+>   descendFields True store fields
 > generateStmt (GramStmtFunCall funCall) = do generateFunCall funCall
 
 
@@ -181,8 +183,9 @@ Once implemented, generate = run generateProgram
 >   generateExpr expr
 >   write $ generateUnaryOperation op
 > generateExpr (GramExpId (Var (Id _ varId) fields)) = do
->   (load, _) <- lookupVar varId
+>   (load, store) <- lookupVar varId
 >   write load
+>   descendFields False store fields
 > generateExpr (GramExpFunCall funCall) = do
 >   generateFunCall funCall
 >   write "ldr RR"
@@ -212,6 +215,31 @@ Once implemented, generate = run generateProgram
 >     callEquals t
 >     write "not"
 
+> descendFields :: Bool -> Code -> [GramField] -> Environment ()
+> descendFields False _ [] = return ()
+> descendFields True store [] = do
+>   write "ajs -1"
+>   write store
+> descendFields save store [x] = case x of
+>   First p fields  -> do
+>     descend save store "-1" fields
+>   Second p fields -> do
+>     descend save store "0" fields
+>   Head p fields   -> do
+>     write "lds 0\nbrf __exc_empty_list_traversal"
+>     descend save store "-1" fields
+>   Tail p fields   -> do
+>     write "lds 0\nbrf __exc_empty_list_traversal"
+>     descend save store "0" fields
+>   where descend :: Bool -> Code -> String -> [GramField] -> Environment ()
+>         descend False store offset fields = do
+>           write $ "ldh " ++ offset
+>           descendFields False store fields
+>         descend True store offset fields = case fields of
+>           (f:fs) -> do
+>             write $ "ldh " ++ offset
+>             descendFields True store fields
+>           [] -> write $ "sta " ++ offset
 
 
 Overloading handlers
