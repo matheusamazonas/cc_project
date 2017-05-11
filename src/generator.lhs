@@ -34,7 +34,7 @@ Once implemented, generate = run generateProgram
 >   sequence $ map addGlobal $ map getVarId globals
 >   sequence $ replicate (length globals) $ write "nop"
 >   sequence $ map generateFunDecl funcs
->   label "__init"
+>   write "\n__init: nop"
 >   sequence $ map generateVariable globals
 >   write "bra main"
 >   sequence_ builtins
@@ -54,10 +54,12 @@ Once implemented, generate = run generateProgram
 
 > generateVariable :: GramVarDecl -> Environment ()
 > generateVariable (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr)) = do
+>   write $ "\n; define global: " ++ varId
 >   generateExpr expr
 >   (_, store) <- lookupVar varId
 >   write store
 > generateVariable (GramVarDeclType _ (GramVarDeclTail (Id _ varId) expr)) = do
+>   write $ "\n; define global: " ++ varId
 >   generateExpr expr
 >   (_, store) <- lookupVar varId
 >   write store
@@ -77,6 +79,7 @@ Once implemented, generate = run generateProgram
 
 > generateFunDecl :: GramFuncDecl -> Environment ()
 > generateFunDecl (GramFuncDecl (Id _ funId) (GramFuncDeclTail args types stmts)) = do
+>   write $ "\n; define function " ++ funId
 >   pushScope
 >   label funId
 >   let argCounter = length args
@@ -361,21 +364,24 @@ tuple: TF = (__print_tuple, (TF_fst, TF_snd))
 Standard library handlers
 
 > builtins = let und = undefined in
->   [polyBuildIn generatePrint,
->    polyBuildIn generateEquals,
+>   [polyBuildIn "print" generatePrint,
+>    polyBuildIn "==" generateEquals,
 >    generateIsEmpty,
 >    runTimeException "__exc_empty_list_traversal" "Runtime exception: empty list traversed",
 >    runTimeException "__exc_untyped_variable" "Runtime exception: could not resolve overloading for print"]
 
 > generateIsEmpty :: Environment ()
 > generateIsEmpty = do
+>   write "\n;define isEmpty"
 >   write "isEmpty: lds -1\nldc 0\neq\nstr RR\nret"
 
-> polyBuildIn :: (GramType -> Environment ()) -> Environment ()
-> polyBuildIn f = let und = undefined in 
+> polyBuildIn :: String -> (GramType -> Environment ()) -> Environment ()
+> polyBuildIn s f = do
+>   let und = undefined
 >   let types = [GramBasicType und CharType, GramBasicType und IntType, GramBasicType und BoolType, 
->                GramListType und und, GramTupleType und und und] in
->				   mapM_ f types
+>                GramListType und und, GramTupleType und und und]
+>   write $ "\n; define polymorphic " ++ s
+>   mapM_ f types
 
 
 Exception handlers
