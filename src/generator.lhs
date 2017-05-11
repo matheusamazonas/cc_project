@@ -62,12 +62,6 @@ Once implemented, generate = run generateProgram
 >   (_, store) <- lookupVar varId
 >   write store
 
-> builtins = let und = undefined in
->   [polyBuildIn generatePrint,
->    polyBuildIn generateEquals,
->    runTimeException "__exc_empty_list_traversal" "Runtime exception: empty list traversed",
->    runTimeException "__exc_untyped_variable" "Runtime exception: could not resolve overloading for print"]
-
 > addArgs :: [GramId] -> Environment ()
 > addArgs args = do
 >   let c = genericLength args
@@ -86,7 +80,7 @@ Once implemented, generate = run generateProgram
 >   pushScope
 >   label funId
 >   let argCounter = length args
->   if funId /= "main" then write $ "link 0" else return ()
+>   if funId /= "main" then write $ "link 0" else write "nop"
 >   addArgs args
 >   generateStmtBlock stmts
 >   case getFuncReturnType types of
@@ -333,12 +327,6 @@ Overloading handlers
 >   write "lds -6\nldh 0\nldh -1\njsr\najs -3\nret" -- compare right elements
 >   write "__eq_tuple_retfalse: ldc 0\nstr RR\nret"
 
-> polyBuildIn :: (GramType -> Environment ()) -> Environment ()
-> polyBuildIn f = let und = undefined in 
->   let types = [GramBasicType und CharType, GramBasicType und IntType, GramBasicType und BoolType, 
->                GramListType und und, GramTupleType und und und] in
->				   mapM_ f types
-
 
 Type frame handlers
 
@@ -369,6 +357,25 @@ tuple: TF = (__print_tuple, (TF_fst, TF_snd))
 > typeFrame _ (GramIdType _) = write "ldc __exc_untyped_variable\nldc 0\nstmh 2"
 
 
+
+Standard library handlers
+
+> builtins = let und = undefined in
+>   [polyBuildIn generatePrint,
+>    polyBuildIn generateEquals,
+>    generateIsEmpty,
+>    runTimeException "__exc_empty_list_traversal" "Runtime exception: empty list traversed",
+>    runTimeException "__exc_untyped_variable" "Runtime exception: could not resolve overloading for print"]
+
+> generateIsEmpty :: Environment ()
+> generateIsEmpty = do
+>   write "isEmpty: lds -1\nldc 0\neq\nstr RR\nret"
+
+> polyBuildIn :: (GramType -> Environment ()) -> Environment ()
+> polyBuildIn f = let und = undefined in 
+>   let types = [GramBasicType und CharType, GramBasicType und IntType, GramBasicType und BoolType, 
+>                GramListType und und, GramTupleType und und und] in
+>				   mapM_ f types
 
 
 Exception handlers
