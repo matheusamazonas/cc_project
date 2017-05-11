@@ -93,7 +93,6 @@ Once implemented, generate = run generateProgram
 >     (GramVoidType _) -> if funId /= "main" then write "unlink\nret" else return ()
 >     otherwise -> do return ()
 >   if funId == "main" then do
->     write "trap 0"
 >     write "halt"
 >   else do 
 >     write "unlink\nret"
@@ -112,6 +111,7 @@ Once implemented, generate = run generateProgram
 >   sequence $ map generateExpr rev_args
 >   if funId == "print" then callPrint $ head ts
 >   else write $ "bsr " ++ funId
+>   write $ "ajs " ++ show (-length args) 
 
 > generateStmtBlock :: [GramStmt] -> Environment ()
 > generateStmtBlock stmts = do
@@ -146,7 +146,7 @@ Once implemented, generate = run generateProgram
 > generateStmt (GramReturn _ (Nothing)) = write "unlink\nret"
 > generateStmt (GramReturn _ (Just expr)) = do
 >   generateExpr expr
->   write "str RR\nunlink\nsts -1\nret"
+>   write "str RR\nunlink\nret"
 > generateStmt (GramFunVarDecl (GramVarDeclType t (GramVarDeclTail (Id _ varId) expr))) = do
 >   addVar varId
 >   generateExpr expr
@@ -245,16 +245,16 @@ Once implemented, generate = run generateProgram
 Overloading handlers
 
 > callPrint :: GramType -> Environment ()
-> callPrint (GramBasicType _ CharType) = write "bsr __print_char\najs -1"
-> callPrint (GramBasicType _ IntType)  = write "bsr __print_int\najs -1"
-> callPrint (GramBasicType _ BoolType) = write "bsr __print_bool\najs -1"
+> callPrint (GramBasicType _ CharType) = write "bsr __print_char"
+> callPrint (GramBasicType _ IntType)  = write "bsr __print_int"
+> callPrint (GramBasicType _ BoolType) = write "bsr __print_bool"
 > callPrint (GramListType _ t) = do
 >   typeFrame "print" t
->   write "lds -1\nbsr __print_list\najs -3"
+>   write "lds -1\nbsr __print_list"
 > callPrint (GramTupleType _ t1 t2) = do
 >   typeFrame "print" t1
 >   typeFrame "print" t2
->   write "stmh 2\nlds -1\nbsr __print_tuple\najs -3"
+>   write "stmh 2\nlds -1\nbsr __print_tuple"
 > callPrint (GramIdType _) = write "bsr __exc_untyped_variable"
 
 > generatePrint :: GramType -> Environment ()
