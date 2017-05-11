@@ -1,11 +1,13 @@
 Extension:
 - higher-order functions + type inference
+- possibly: lambda expressions (if so, look at closures and value restriction online)
 
 
 Bigger improvements:
 - polymorphic overloading (propagate type frames)
-- double label merging (a: nop b: op)
+- double label merging (a: nop b: op) - string postprocessing on code?
 - only include actually-used parts of the standard library 
+- move data segment to space after code segment - string postproc to resolve statically?
 
 
 Possible little improvements:
