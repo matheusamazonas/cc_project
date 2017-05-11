@@ -5,6 +5,7 @@ Extension:
 Bigger improvements:
 - polymorphic overloading (propagate type frames)
 - double label merging (a: nop b: op)
+- only include actually-used parts of the standard library 
 
 
 Possible little improvements:
@@ -13,4 +14,5 @@ Possible little improvements:
   as a form of typecast (with null body in code gen)
 - string literals (convert "lol" into 'l':'o':'l':[])
 - for loops (convert to while loop in code gen)
+- graceful error when no main available
 
