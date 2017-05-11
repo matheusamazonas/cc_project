@@ -2,7 +2,7 @@
 
 > import Control.Monad
 > import Control.Monad.State
-> import Control.Monad.Writer
+> import Control.Monad.Writer (WriterT, tell, execWriterT)
 > import Grammar
 > import Token
 > import Data.Char (ord)
@@ -153,9 +153,9 @@ Once implemented, generate = run generateProgram
 >   addVar varId
 >   generateExpr expr
 > generateStmt (GramAttr _ (Var (Id _ varId) fields) expr) = do
->   (_, load) <- lookupVar varId
+>   (_, store) <- lookupVar varId
 >   generateExpr expr
->   write load
+>   write store
 > generateStmt (GramStmtFunCall funCall) = do generateFunCall funCall
 
 
@@ -181,8 +181,8 @@ Once implemented, generate = run generateProgram
 >   generateExpr expr
 >   write $ generateUnaryOperation op
 > generateExpr (GramExpId (Var (Id _ varId) fields)) = do
->   (store, _) <- lookupVar varId
->   write store
+>   (load, _) <- lookupVar varId
+>   write load
 > generateExpr (GramExpFunCall funCall) = do
 >   generateFunCall funCall
 >   write "ldr RR"
@@ -213,19 +213,20 @@ Once implemented, generate = run generateProgram
 >     write "not"
 
 
+
 Overloading handlers
 
 > callPrint :: GramType -> Environment ()
-> callPrint (GramBasicType _ CharType) = write "bsr __print_char"
-> callPrint (GramBasicType _ IntType)  = write "bsr __print_int"
-> callPrint (GramBasicType _ BoolType) = write "bsr __print_bool"
+> callPrint (GramBasicType _ CharType) = write "bsr __print_char\najs -1"
+> callPrint (GramBasicType _ IntType)  = write "bsr __print_int\najs -1"
+> callPrint (GramBasicType _ BoolType) = write "bsr __print_bool\najs -1"
 > callPrint (GramListType _ t) = do
 >   typeFrame "print" t
->   write "lds -1\nbsr __print_list"
+>   write "lds -1\nbsr __print_list\najs -3"
 > callPrint (GramTupleType _ t1 t2) = do
 >   typeFrame "print" t1
 >   typeFrame "print" t2
->   write "stmh 2\nlds -1\nbsr __print_tuple"
+>   write "stmh 2\nlds -1\nbsr __print_tuple\najs -3"
 > callPrint (GramIdType _) = write "bsr __exc_untyped_variable"
 
 > generatePrint :: GramType -> Environment ()
