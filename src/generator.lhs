@@ -84,7 +84,7 @@ Once implemented, generate = run generateProgram
 >   pushScope
 >   label funId
 >   let argCounter = length args
->   if funId /= "main" then write "link 0" else write "nop"
+>   if funId /= "main" then write "link 0" else return ()
 >   addArgs args
 >   generateStmtBlock stmts
 >   case getFuncReturnType types of
@@ -150,8 +150,11 @@ Once implemented, generate = run generateProgram
 > generateStmt (GramAttr _ (Var (Id _ varId) fields) expr) = do
 >   (load, store) <- lookupVar varId
 >   generateExpr expr
->   write load
->   descendFields True store fields
+>   case fields of
+>     [] -> write store
+>     (f:_) -> do
+>       write load
+>       descendFields True f
 > generateStmt (GramStmtFunCall funCall) = do generateFunCall funCall
 
 
@@ -179,7 +182,9 @@ Once implemented, generate = run generateProgram
 > generateExpr (GramExpId (Var (Id _ varId) fields)) = do
 >   (load, store) <- lookupVar varId
 >   write load
->   descendFields False store fields
+>   case fields of
+>     [] -> return ()
+>     (f:_) -> descendFields False f
 > generateExpr (GramExpFunCall funCall) = do
 >   generateFunCall funCall
 >   write "ldr RR"
@@ -209,31 +214,30 @@ Once implemented, generate = run generateProgram
 >     callEquals t
 >     write "not"
 
-> descendFields :: Bool -> Code -> [GramField] -> Environment ()
-> descendFields False _ [] = return ()
-> descendFields True store [] = do
->   write "ajs -1"
->   write store
-> descendFields save store [x] = case x of
+> descendFields :: Bool -> GramField -> Environment ()
+> descendFields save f = case f of
 >   First p fields  -> do
->     descend save store "-1" fields
+>     descend save "-1" fields
 >   Second p fields -> do
->     descend save store "0" fields
+>     descend save "0" fields
 >   Head p fields   -> do
 >     write "lds 0\nbrf __exc_empty_list_traversal"
->     descend save store "-1" fields
+>     descend save "-1" fields
 >   Tail p fields   -> do
 >     write "lds 0\nbrf __exc_empty_list_traversal"
->     descend save store "0" fields
->   where descend :: Bool -> Code -> String -> [GramField] -> Environment ()
->         descend False store offset fields = do
+>     descend save "0" fields
+>   where descend :: Bool -> String -> [GramField] -> Environment ()
+>         descend False offset fields = do
 >           write $ "ldh " ++ offset
->           descendFields False store fields
->         descend True store offset fields = case fields of
->           (f:fs) -> do
->             write $ "ldh " ++ offset
->             descendFields True store fields
->           [] -> write $ "sta " ++ offset
+>           case fields of
+>             [] -> return ()
+>             (f:_) -> descendFields False f
+>         descend True offset fields = 
+>           case fields of
+>             [] -> write $ "sta " ++ offset
+>             (f:_) -> do
+>               write $ "ldh " ++ offset
+>               descendFields True f
 
 
 Overloading handlers
