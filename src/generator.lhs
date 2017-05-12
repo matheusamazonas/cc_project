@@ -87,9 +87,6 @@ Once implemented, generate = run generateProgram
 >   if funId /= "main" then write "link 0" else write "nop"
 >   addArgs args
 >   generateStmtBlock stmts
->   case getFuncReturnType types of
->     (GramVoidType _) -> if funId /= "main" then write "unlink\nret" else return ()
->     otherwise -> do return ()
 >   if funId == "main" then do
 >     write "halt"
 >   else do 
