@@ -87,10 +87,9 @@ Once implemented, generate = run generateProgram
 >   if funId /= "main" then write "link 0" else write "nop"
 >   addArgs args
 >   generateStmtBlock stmts
->   if funId == "main" then do
->     write "halt"
->   else do 
->     write "unlink\nret"
+>   case getFuncReturnType types of
+>     (GramVoidType _) -> if funId == "main" then write "halt" else write "unlink\nret"
+>     otherwise -> do return ()
 
 > genVarDecl :: GramVarDecl -> Environment ()
 > genVarDecl (GramVarDeclType varType (GramVarDeclTail (Id _ varId) expr)) = do
