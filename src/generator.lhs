@@ -3,10 +3,10 @@
 > import Control.Monad
 > import Control.Monad.State
 > import Control.Monad.Writer (WriterT, tell, execWriterT)
+> import Data.Char (ord)
+> import Data.List (genericLength, isPrefixOf)
 > import Grammar
 > import Token
-> import Data.Char (ord)
-> import Data.List (genericLength)
 
 
 > type Depth = Integer
@@ -25,7 +25,7 @@ Call with, e.g., run generateStmtBlock stmts, with stmts :: [GramStmt]
 Once implemented, generate = run generateProgram
 
 > generate :: Gram -> Code
-> generate = run generateProgram 
+> generate = postprocess . run generateProgram 
 
 > generateProgram :: Gram -> Environment ()
 > generateProgram g = do 
@@ -34,7 +34,8 @@ Once implemented, generate = run generateProgram
 >   sequence $ map addGlobal $ map getVarId globals
 >   sequence $ replicate (length globals) $ write "nop"
 >   sequence $ map generateFunDecl funcs
->   write "\n__init: nop"
+>   write "\n; initialise global variables"
+>   label "__init"
 >   sequence $ map generateVariable globals
 >   write "bra main"
 >   sequence_ builtins
@@ -54,12 +55,12 @@ Once implemented, generate = run generateProgram
 
 > generateVariable :: GramVarDecl -> Environment ()
 > generateVariable (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr)) = do
->   write $ "\n; define global: " ++ varId
+>   write $ "\n; initialise global: " ++ varId
 >   generateExpr expr
 >   (_, store) <- lookupVar varId
 >   write store
 > generateVariable (GramVarDeclType _ (GramVarDeclTail (Id _ varId) expr)) = do
->   write $ "\n; define global: " ++ varId
+>   write $ "\n; initialise global: " ++ varId
 >   generateExpr expr
 >   (_, store) <- lookupVar varId
 >   write store
@@ -83,7 +84,7 @@ Once implemented, generate = run generateProgram
 >   pushScope
 >   label funId
 >   let argCounter = length args
->   if funId /= "main" then write $ "link 0" else write "nop"
+>   if funId /= "main" then write "link 0" else write "nop"
 >   addArgs args
 >   generateStmtBlock stmts
 >   case getFuncReturnType types of
@@ -114,7 +115,7 @@ Once implemented, generate = run generateProgram
 > generateStmtBlock stmts = do
 >   pushScope
 >   generateStmtBlock' stmts
->   where generateStmtBlock' [] = do write "nop"; popScope
+>   where generateStmtBlock' [] = popScope
 >         generateStmtBlock' (stmt:stmts) = do
 >           generateStmt stmt
 >           generateStmtBlock' stmts
@@ -400,6 +401,31 @@ Exception handlers
 
 > printChar :: Char -> Environment ()
 > printChar c = write $ "ldc " ++ show (ord c) ++ "\ntrap 1"
+
+
+Post-processing
+
+> postprocess :: Code -> Code
+> postprocess = fixDoubleLabels
+
+> fixDoubleLabels :: Code -> Code
+> fixDoubleLabels code = 
+>   let fixes = map (findDoubleLabels . words) $ lines code in
+>   let substitute = applySub $ foldr (++) [] $ map snd fixes in
+>   unlines $ map (substitute . unwords . fst) fixes
+>   where findDoubleLabels wrds
+>           | length wrds > 2 && last (head wrds) == ':' && last (head $ tail wrds) == ':' = 
+>               (tail wrds, [(init $ head wrds, init $ head $ tail wrds)])
+>           | otherwise = (wrds, [])
+>         applySub subs ln
+>           | any (\i -> isPrefixOf i ln) subbedInstructions = 
+>             case lookup (drop 4 ln) subs of
+>               Just lab -> (take 4 ln) ++ lab
+>               Nothing  -> ln
+>           | otherwise = ln
+>         subbedInstructions = ["bra ", "brf ", "brt ", "bsr ", "ldc "]
+
+
 
 
 
