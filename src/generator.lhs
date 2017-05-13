@@ -406,7 +406,7 @@ Exception handlers
 > printText = mapM_ printChar
 
 > printChar :: Char -> Environment ()
-> printChar c = write $ "ldc " ++ show (ord c) ++ "\ntrap 1"
+> printChar c = write $ "ldc " ++ show (ord c) ++ "; " ++ [c] ++ "\ntrap 1"
 
 
 Post-processing
