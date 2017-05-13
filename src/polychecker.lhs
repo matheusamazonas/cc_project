@@ -11,7 +11,7 @@
 > import Text.Read (readMaybe)
 > import Token 
 
-> data Type = TBool | TInt | TChar | TVoid | TTuple Type Type | TList Type | TFunc [Type] Type | TScheme [Type] Type | TVar Int
+> data Type = TBool | TInt | TChar | TVoid | TTuple Type Type | TList Type | TFunc [Type] Type | TScheme [Type] Type | TVar Int | TFree Int
 >   deriving (Show, Eq, Ord)
 
 > data RetType = DoesNotReturn | SometimesReturns Type | AlwaysReturns Type
@@ -567,16 +567,21 @@ with type annotations in /*comments*/
 >         fid <- getVarId id
 >         s <- get
 >         let (subs, scopes, nextvar) = s
->         let newsubs = replaceSub subs fid (scheme tfun)
+>         let newsubs = replaceSub subs fid $ scheme tfun internaltypes
 >         put (newsubs, scopes, nextvar)
 >   where retInstantiated (TFunc targs (TVar i)) = occurs i (TFunc targs TVoid)
 >         retInstantiated (TFunc _ _) = True -- needs to be changed for HOF (e.g., for (.))
->         
 >         replaceSub [] fid tscheme = [(fid,tscheme)]
 >         replaceSub ((i,t):subs) fid tscheme
 >           | i == fid  = (i,tscheme) : subs
 >           | otherwise = (i,t) : (replaceSub subs fid tscheme)
->         scheme (TFunc targs tret) = TScheme targs tret
+>         scheme (TFunc targs tret) ints = TScheme (map (quantify ints) targs) (quantify ints tret)
+>         quantify ints t@(TVar i)
+>           | i `elem` ints = TFree i
+>           | otherwise = t
+>         quantify ints (TList t)= TList $ quantify ints t
+>         quantify ints (TTuple t1 t2) = TTuple (quantify ints t1) (quantify ints t2)
+>         quantify _ t = t
 
 > instantiate :: Type -> Environment Type
 > instantiate (TScheme targs tret) = do
@@ -593,7 +598,7 @@ with type annotations in /*comments*/
 >           (tlist,finsts) <- instantiateArgs newinsts ts 
 >           return (newt:tlist, finsts)
 >         instantiateArg :: [(Type,Type)] -> Type -> Environment (Type, [(Type,Type)])
->         instantiateArg insts v@(TVar i) = 
+>         instantiateArg insts v@(TFree i) =
 >           case lookup v insts of
 >             Just t  -> return (t, insts)
 >             Nothing -> do
@@ -608,10 +613,6 @@ with type annotations in /*comments*/
 >           (newt2, newinsts2) <- instantiateArg newinsts1 t2
 >           return (TTuple newt1 newt2, newinsts2)
 >         instantiateArg insts t = return (t, insts)
->         instantiateRet insts tret = 
->           case lookup tret insts of
->             Just t  -> t
->             Nothing -> tret
 > instantiate t = return t
 
 > internals :: EnvType -> String -> Type -> [Int]
@@ -922,9 +923,12 @@ Tree post-decoration - stage 3
 > convertFromGramType (GramTupleType _ t1 t2)    = TTuple (convertFromGramType t1) (convertFromGramType t2)
 > convertFromGramType (GramListType _ t)         = TList (convertFromGramType t)
 > convertFromGramType (GramIdType (Id _ i)) -- quits ungracefully; TODO wrap in Environment
->   | (not $ null i) || head i /= 't' =
+>   | (not $ null i) && head i == 't' =
 >     case readMaybe (tail i) :: Maybe Int of
 >       Just vid -> TVar vid
+>   | (not $ null i) && head i == 'v' =
+>     case readMaybe (tail i) :: Maybe Int of
+>       Just vid -> TFree vid
 
 > convertToGramType :: Type -> GramType -- HOF or function var.s not supported
 > convertToGramType TBool          = GramBasicType nP BoolType
@@ -933,6 +937,7 @@ Tree post-decoration - stage 3
 > convertToGramType (TTuple t1 t2) = GramTupleType nP (convertToGramType t1) (convertToGramType t2)
 > convertToGramType (TList t)      = GramListType nP (convertToGramType t)
 > convertToGramType (TVar i)       = GramIdType (Id nP ("t" ++ (show i)))
+> convertToGramType (TFree i)      = GramIdType (Id nP ("v" ++ (show i)))
 
 > getTypePos :: GramType -> SourcePos
 > getTypePos (GramBasicType p _) = p
@@ -964,8 +969,8 @@ Tree post-decoration - stage 3
 
 > initEnv :: EnvType
 > initEnv = ([(-4, tempty), (-2, tprint)],[[("print", -2), ("isEmpty", -4)]],0)
->   where tprint = TScheme [TVar (-1)] TVoid
->         tempty = TScheme [TList (TVar (-3))] TBool
+>   where tprint = TScheme [TFree (-1)] TVoid
+>         tempty = TScheme [TList (TFree (-3))] TBool
 
 > nP :: SourcePos
 > nP = newPos "<internal>" 0 0
