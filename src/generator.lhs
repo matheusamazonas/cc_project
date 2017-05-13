@@ -246,48 +246,50 @@ Overloading handlers
 > callPrint (GramBasicType _ CharType) = write "bsr __print_char"
 > callPrint (GramBasicType _ IntType)  = write "bsr __print_int"
 > callPrint (GramBasicType _ BoolType) = write "bsr __print_bool"
-> callPrint (GramListType _ t) = do
->   typeFrame "print" t
+> callPrint t@(GramListType _ _) = do
+>   typeFrame t
 >   write "lds -1\nbsr __print_list"
-> callPrint (GramTupleType _ t1 t2) = do
->   typeFrame "print" t1
->   typeFrame "print" t2
->   write "stmh 2\nlds -1\nbsr __print_tuple"
+> callPrint t@(GramTupleType _ _ _) = do
+>   typeFrame t
+>   write "lds -1\nbsr __print_tuple"
 > callPrint (GramIdType _) = write "bsr __exc_untyped_variable"
 
-> generatePrint :: GramType -> Environment ()
-> generatePrint (GramBasicType _ CharType) = write "__print_char: lds -1\ntrap 1\nret"
-> generatePrint (GramBasicType _ IntType)  = write "__print_int: lds -1\ntrap 0\nret"
-> generatePrint (GramBasicType _ BoolType) = do
+> generatePrint :: Maybe GramType -> Environment ()
+> generatePrint Nothing = do
+>   write "__print: lds -2\nldh -1\nldr PC\nadd\nstr PC"
+>   write "bra __print_char\nbra __print_int\nbra __print_bool\nbra __print_list\nbra __print_tuple\nbra __exc_untyped_variable"
+> generatePrint (Just (GramBasicType _ CharType)) = write "__print_char: lds -1\ntrap 1\nret"
+> generatePrint (Just (GramBasicType _ IntType))  = write "__print_int: lds -1\ntrap 0\nret"
+> generatePrint (Just (GramBasicType _ BoolType)) = do
 >   write "__print_bool: lds -1\nbrf __print_bool_false"
 >   printText "True"
 >   write "ret"
 >   label "__print_bool_false"
 >   printText "False"
 >   write "ret"
-> generatePrint (GramListType _ _) = do
+> generatePrint (Just (GramListType _ _)) = do
 >   label "__print_list"
 >   printChar '['
 >   write "lds -1\nbrf print_list_post" -- check for empty list
 >   write "print_list_elem: lds -2\nldh 0" -- load inner type frame
->   write "\nlds -2\nldh -1" -- load head
->   write "\nlds -4\nldh -1\njsr\najs -2" -- print head 
+>   write "lds -2\nldh -1" -- load head
+>   write "bsr __print\najs -2" -- print head 
 >   write "lds -1\nldh 0\nbrf print_list_post" -- close singleton list
 >   printText ", "
 >   write "lds -1\nldh 0\nsts -2\nbra print_list_elem" -- for longer lists, recurse
 >   label "print_list_post"
 >   printChar ']'
 >   write "ret"
-> generatePrint (GramTupleType _ _ _) = do
+> generatePrint (Just (GramTupleType _ _ _)) = do
 >   label "__print_tuple"
 >   printChar '('
->   write "lds -2\nldh -1\nlds 0\nldh 0" -- load left type frame
->   write "lds -3\nldh -1" -- load left element
->   write "lds -2\nldh -1\njsr\najs -3" -- print left element
+>   write "lds -2\nldh 0\nldh -1" -- load left type frame
+>   write "lds -2\nldh -1" -- load left element
+>   write "bsr __print\najs -2" -- print left element
 >   printText ", "
->   write "lds -2\nldh 0\nlds 0\nldh 0" -- load right type frame
->   write "lds -3\nldh 0" -- load right element
->   write "lds -2\nldh -1\njsr\najs -3" -- print right element
+>   write "lds -2\nldh 0\nldh 0" -- load right type frame
+>   write "lds -2\nldh 0" -- load right element
+>   write "bsr __print\najs -2" -- print right element
 >   printChar ')'
 >   write "ret"   
 
@@ -296,69 +298,73 @@ Overloading handlers
 > callEquals (GramBasicType _ CharType) = write "eq"
 > callEquals (GramBasicType _ IntType) = write "eq"
 > callEquals (GramBasicType _ BoolType) = write "bsr __eq_bool\nldr RR"
-> callEquals (GramListType _ t) = do
->   typeFrame "eq" t
+> callEquals t@(GramListType _ _) = do
+>   typeFrame t
 >   write "lds -2\nlds -2\nbsr __eq_list\najs -5\nldr RR"
-> callEquals (GramTupleType _ t1 t2) = do
->   typeFrame "eq" t1
->   typeFrame "eq" t2
->   write "stmh 2\nlds -2\nlds -2\nbsr __eq_tuple\najs -5\nldr RR"
+> callEquals t@(GramTupleType _ _ _) = do
+>   typeFrame t
+>   write "lds -2\nlds -2\nbsr __eq_tuple\najs -5\nldr RR"
 > callEquals (GramIdType _) = write "bsr __exc_untyped_variable"
 
 
-> generateEquals :: GramType -> Environment ()
-> generateEquals (GramBasicType _ CharType) = write "__eq_char: lds -2\nlds -2\neq\nstr RR\nret"
-> generateEquals (GramBasicType _ IntType)  = write "__eq_int: lds -2\nlds -2\neq\nstr RR\nret"
-> generateEquals (GramBasicType _ BoolType) = do
+> generateEquals :: Maybe GramType -> Environment ()
+> generateEquals Nothing = do
+>   write "__eq: lds -3\nldh -1\nldr PC\nadd\nstr PC"
+>   write "bra __eq_char\nbra __eq_int\nbra __eq_bool\nbra __eq_list\nbra __eq_tuple\nbra __exc_untyped_variable"
+> generateEquals (Just (GramBasicType _ CharType)) = write "__eq_char: lds -2\nlds -2\neq\nstr RR\nret"
+> generateEquals (Just (GramBasicType _ IntType))  = write "__eq_int: lds -2\nlds -2\neq\nstr RR\nret"
+> generateEquals (Just (GramBasicType _ BoolType)) = do
 >   write "__eq_bool: lds -2\nldc 0\nne\nlds -2\nldc 0\nne" -- convert to "unequal to zero" representation as -1 and 1 are both used by SSM
 >   write "eq\nstr RR\nret"
-> generateEquals (GramListType _ _) = do
->   write "__eq_list: lds -2\nlds -2\nbrf __eq_list_null1\nbrf __eq_list_retfalse" -- check for null lists (base case)
+> generateEquals (Just (GramListType _ _)) = do
+>   write "__eq_list: lds -2\nlds -2\nbrf __eq_list_null\nbrf __eq_list_retfalse" -- check for null lists (base case)
 >   write "lds -3\nldh 0" -- load inner type frame
 >   write "lds -3\nldh -1\nlds -3\nldh -1" -- load both heads
->   write "lds -6\nldh -1\njsr\najs -3\nldr RR\nbrf __eq_list_retfalse" -- compare heads
+>   write "bsr __eq\najs -3\nldr RR\nbrf __eq_list_retfalse" -- compare heads
 >   write "lds -3\nlds -3\nldh 0\nlds -3\nldh 0" -- copy type frame and list tails
 >   write "bsr __eq_list\najs -3\nret" -- recursive call on tails
->   write "__eq_list_null1: ldc 0\neq\nbra __eq_list_post" -- first list empty - return isEmpty(second list)
+>   write "__eq_list_null: ldc 0\neq\nbra __eq_list_post" -- first list empty - return isEmpty(second list)
 >   write "__eq_list_retfalse: ldc 0" -- first list non-empty, second empty - return false
 >   write "__eq_list_post: str RR\nret"
-> generateEquals (GramTupleType _ _ _) = do
->   write "__eq_tuple: lds -3\nldh -1\nldh 0" -- load left element's type frame
+> generateEquals (Just (GramTupleType _ _ _)) = do
+>   write "__eq_tuple: lds -3\nldh 0\nldh -1" -- load left element's type frame
 >   write "lds -3\nldh -1\nlds -3\nldh -1" -- load both left elements
->   write "lds -6\nldh -1\nldh -1\njsr\najs -3\nldr RR\nbrf __eq_tuple_retfalse" -- compare left elements
+>   write "bsr __eq\najs -3\nldr RR\nbrf __eq_tuple_retfalse" -- compare left elements
 >   write "lds -3\nldh 0\nldh 0" -- load right element's type frame
 >   write "lds -3\nldh 0\nlds -3\nldh 0" -- load both right elements
->   write "lds -6\nldh 0\nldh -1\njsr\najs -3\nret" -- compare right elements
+>   write "bsr __eq\najs -3\nret" -- compare right elements
 >   write "__eq_tuple_retfalse: ldc 0\nstr RR\nret"
 
 
 Type frame handlers
 
 A type frame is generated during an overloaded operation such as (==) or print.
-This contains information about which print methods should be used during execution.
-In particular, types containing types (e.g., lists and tuples) use this information
-to determine at runtime which print functions should be called for their elements.
+This contains type information so that it can be decided which print/equals methods 
+should be used, dynamically, during execution. In particular, types containing types 
+(e.g., lists and tuples) use this information to determine at runtime 
+which print/equals functions should be called for their elements.
 
 A type frame is a tuple defined as follows.
 Here, TF_element, TF_fst and TF_snd are type frames for the contained types.
-int/char/bool: TF = (__print_char/int/bool, null)
-list: TF = (__print_list, TF_element)
-tuple: TF = (__print_tuple, (TF_fst, TF_snd))
+_char, _list, etc. are offsets used by print/equals to find the right implementation.
+int/char/bool: TF = (_char/_int/_bool, null)
+list: TF = (_list, TF_element)
+tuple: TF = (_tuple, (TF_fst, TF_snd))
 
-> typeFrame :: String -> GramType -> Environment ()
-> typeFrame fname (GramBasicType _ CharType) = write $ "ldc __" ++ fname ++ "_char\nldc 0\nstmh 2"
-> typeFrame fname (GramBasicType _ IntType)  = write $ "ldc __" ++ fname ++ "_int\nldc 0\nstmh 2"
-> typeFrame fname (GramBasicType _ BoolType) = write $ "ldc __" ++ fname ++ "_bool\nldc 0\nstmh 2"
-> typeFrame fname (GramListType _ t) = do
->   write $ "ldc __" ++ fname ++ "_list"
->   typeFrame fname t
+> typeFrame :: GramType -> Environment ()
+> typeFrame (GramBasicType _ CharType) = write "ldc 3\nldc 0\nstmh 2"
+> typeFrame (GramBasicType _ IntType)  = write "ldc 5\nldc 0\nstmh 2"
+> typeFrame (GramBasicType _ BoolType) = write "ldc 7\nldc 0\nstmh 2"
+> typeFrame (GramListType _ t) = do
+>   write "ldc 9"
+>   typeFrame t
 >   write "stmh 2"
-> typeFrame fname (GramTupleType _ t1 t2) = do
->   write $ "ldc __" ++ fname ++ "_tuple"
->   typeFrame fname t1
->   typeFrame fname t2
+> typeFrame (GramTupleType _ t1 t2) = do
+>   write "ldc 11"
+>   typeFrame t1
+>   typeFrame t2
 >   write "stmh 2\nstmh 2"
-> typeFrame _ (GramIdType _) = write "ldc __exc_untyped_variable\nldc 0\nstmh 2"
+> typeFrame (GramIdType _) = write "ldc 13\nldc 0\nstmh 2"
 
 
 
@@ -374,13 +380,13 @@ Standard library handlers
 > generateIsEmpty :: Environment ()
 > generateIsEmpty = do
 >   write "\n;define isEmpty"
->   write "isEmpty: lds -1\nldc 0\neq\nstr RR\nret"
+>   write "isEmpty: lds -1\nldc 0\neq\nstr RR\nret\n"
 
-> polyBuildIn :: String -> (GramType -> Environment ()) -> Environment ()
+> polyBuildIn :: String -> (Maybe GramType -> Environment ()) -> Environment ()
 > polyBuildIn s f = do
 >   let und = undefined
->   let types = [GramBasicType und CharType, GramBasicType und IntType, GramBasicType und BoolType, 
->                GramListType und und, GramTupleType und und und]
+>   let types = [Just $ GramBasicType und CharType, Just $ GramBasicType und IntType, Just $ GramBasicType und BoolType, 
+>                Just $ GramListType und und, Just $ GramTupleType und und und, Nothing]
 >   write $ "\n; define polymorphic " ++ s
 >   mapM_ f types
 
