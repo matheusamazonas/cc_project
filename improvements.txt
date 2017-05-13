@@ -5,16 +5,18 @@ Extension:
 
 Bigger improvements:
 - polymorphic overloading (propagate type frames)
-- double label merging (a: nop b: op) - string postprocessing on code?
 - only include actually-used parts of the standard library 
-- move data segment to space after code segment - string postproc to resolve statically?
+- move data segment to space after code segment
+  x placeholder labels into string postproc to resolve statically?
+  x count #instructions + #arguments to find end of code block
+  x increase SP at start of __init by #globals - 16 to make space (16 words after code block left open)
 
 
 Possible little improvements:
 - character arithmetic: make TInt and TChar unify, 
   two functions chr and ord (Int->Char and vice versa)
   as a form of typecast (with null body in code gen)
-- string literals (convert "lol" into 'l':'o':'l':[])
+- string literals (convert "lol" into 'l':'o':'l':[] and display as string?)
 - for loops (convert to while loop in code gen)
 - graceful error when no main available
 
