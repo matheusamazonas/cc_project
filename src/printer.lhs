@@ -58,11 +58,11 @@
 > printFuncDeclTail :: Int -> GramFuncDeclTail -> String
 > printFuncDeclTail i (GramFuncDeclTail args [] stmts) = 
 >           tb i ++  "(" ++ printFArgs 0 args ++ ")\n{\n"
->           ++ printMany printStmt 1 stmts ++ "}"
+>           ++ printMany printStmt 1 stmts ++ "}\n"
 > printFuncDeclTail i (GramFuncDeclTail args funTypes stmts) = 
 >           tb i ++  "(" ++ printFArgs 0 args ++ ")"
 >           ++ " :: " ++ printMany printFunType 0 funTypes ++ "\n{\n"
->           ++ printMany printStmt 1 stmts ++ "}"
+>           ++ printMany printStmt 1 stmts ++ "}\n"
 
 > printRetType :: Int -> GramRetType -> String
 > printRetType i (GramRetType t) = printType i t
