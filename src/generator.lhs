@@ -313,7 +313,7 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >         freeTypeVars _ = []
 >         getTypeFrame numFrames i
 >           | numFrames == 1 = ""
->           | i == numFrames = concat $ replicate i "ldh 0\n"
+>           | i == numFrames-1 = concat $ replicate i "ldh 0\n"
 >           | otherwise = (concat $ replicate i "ldh 0\n") ++ "ldh -1"
 
 
