@@ -4,7 +4,7 @@
 > import Control.Monad.State
 > import Control.Monad.Writer (WriterT, tell, execWriterT)
 > import Data.Char (ord)
-> import Data.List (genericLength, isPrefixOf)
+> import Data.List (genericLength, isPrefixOf, nub)
 > import Grammar
 > import Token
 
@@ -67,13 +67,12 @@ Once implemented, generate = run generateProgram
 
 > addArgs :: [GramId] -> Environment ()
 > addArgs args = do
->   let c = genericLength args
 >   addArgs' args (-2) -- c == MP and c-1 holds the return address. Hence c-2
 >   where
 >     addArgs' [] _ = do return ()
->     addArgs' ((Id _ argId):as) argC = do
+>     addArgs' ((Id _ argId):args) argC = do
 >       addArg argId argC
->       addArgs' as (argC-1)
+>       addArgs' args (argC-1)
 
 > getFuncReturnType :: [GramFunType] -> GramRetType
 > getFuncReturnType ((GramFunType _ ret):_) = ret
@@ -85,11 +84,15 @@ Once implemented, generate = run generateProgram
 >   label funId
 >   let argCounter = length args
 >   if funId /= "main" then write "link 0" else return ()
+>   addTypeFrameArgs argCounter $ getArgTypes types
 >   addArgs args
 >   generateStmtBlock stmts
 >   case getFuncReturnType types of
 >     (GramVoidType _) -> if funId == "main" then write "halt" else write "unlink\nret"
 >     otherwise -> do return ()
+>   where getArgTypes [GramFunType ftypes _] = getArgTypes' ftypes
+>         getArgTypes' [] = []
+>         getArgTypes' [GramFTypes t ftypes] = t : getArgTypes' ftypes
 
 > genVarDecl :: GramVarDecl -> Environment ()
 > genVarDecl (GramVarDeclType varType (GramVarDeclTail (Id _ varId) expr)) = do
@@ -101,10 +104,15 @@ Once implemented, generate = run generateProgram
 
 > generateFunCall :: GramFunCall -> Environment ()
 > generateFunCall (GramOverloadedFunCall ts (Id _ funId) args) = do
+>   functionTypeFrame ts
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
->   if funId == "print" then callPrint $ head ts
->   else write $ "bsr " ++ funId
+>   write $ "bsr " ++ funId
+>   write $ "ajs " ++ show (-1-length args) 
+> generateFunCall (GramFunCall (Id _ funId) args) = do
+>   let rev_args = reverse args
+>   sequence $ map generateExpr rev_args
+>   write $ "bsr " ++ funId
 >   write $ "ajs " ++ show (-length args) 
 
 > generateStmtBlock :: [GramStmt] -> Environment ()
@@ -240,7 +248,78 @@ Once implemented, generate = run generateProgram
 >               descendFields True f
 
 
-Overloading handlers
+Type frame handlers
+
+A type frame is generated during an overloaded operation such as (==) or print.
+This contains type information so that it can be decided which print/equals methods 
+should be used, dynamically, during execution. In particular, types containing types 
+(e.g., lists and tuples) use this information to determine at runtime 
+which print/equals functions should be called for their elements.
+
+A type frame is a tuple defined as follows.
+Here, TF_element, TF_fst and TF_snd are type frames for the contained types.
+_char, _list, etc. are offsets used by print/equals to find the right implementation.
+int/char/bool: TF = (_char/_int/_bool, null)
+list: TF = (_list, TF_element)
+tuple: TF = (_tuple, (TF_fst, TF_snd))
+
+> typeFrame :: GramType -> Environment ()
+> typeFrame (GramBasicType _ CharType) = write "ldc 3\nldc 0\nstmh 2"
+> typeFrame (GramBasicType _ IntType)  = write "ldc 5\nldc 0\nstmh 2"
+> typeFrame (GramBasicType _ BoolType) = write "ldc 7\nldc 0\nstmh 2"
+> typeFrame (GramListType _ t) = do
+>   write "ldc 9"
+>   typeFrame t
+>   write "stmh 2"
+> typeFrame (GramTupleType _ t1 t2) = do
+>   write "ldc 11"
+>   typeFrame t1
+>   typeFrame t2
+>   write "stmh 2\nstmh 2"
+> typeFrame (GramIdType (Id _ id))
+>   | (length id >= 2) && (head id == 't') = do
+>     (load, store) <- lookupVar $ "__tf_" ++ tail id
+>     write $ repl load
+>   | otherwise = write "bra __exc_unknown_error"
+>   where repl "bra __exc_unknown_error" = "ldc 13\nldc 0\nstmh 2"
+>         repl c = c
+
+> functionTypeFrame :: [GramType] -> Environment ()
+> functionTypeFrame ts = do
+>   mapM_ typeFrame ts
+>   sequence_ $ replicate (length ts - 1) $ write "stmh 2"
+
+> addTypeFrameArgs :: Int -> [GramType] -> Environment ()
+> addTypeFrameArgs locali ts = do
+>   let freeIds = nub $ concat $ map freeTypeVars ts
+>   void $ addTypeFrameArgs' locali (length freeIds) 0 freeIds
+>   where addTypeFrameArgs' :: Int -> Int -> Int -> [String] -> Environment ()
+>         addTypeFrameArgs' _ _ _ [] = return ()
+>         addTypeFrameArgs' locali numFrames i (id:ids) = do
+>           addTypeFrameArg locali numFrames i id
+>           addTypeFrameArgs' locali numFrames (i+1) ids
+>         addTypeFrameArg :: Int -> Int -> Int -> String -> Environment ()
+>         addTypeFrameArg locali numFrames i id = do
+>           (((d,v):ss), nxt) <- get
+>           let fid = "__tf_" ++ id
+>           let loadIns = "ldl -" ++ show (2+locali) ++ "\n" ++ getTypeFrame numFrames i
+>           let storeIns = "bra __exc_unknown_error"
+>           put ((d,(fid, (loadIns, storeIns)):v):ss, nxt)
+>         freeTypeVars (GramIdType (Id _ id)) 
+>           | (length id >= 2) && (head id == 'v') = [tail id]
+>           | otherwise = []
+>         freeTypeVars (GramListType _ t) = freeTypeVars t
+>         freeTypeVars (GramTupleType _ t1 t2) = freeTypeVars t1 ++ freeTypeVars t2
+>         freeTypeVars _ = []
+>         getTypeFrame numFrames i
+>           | numFrames == 1 = ""
+>           | i == numFrames = concat $ replicate i "ldh 0\n"
+>           | otherwise = (concat $ replicate i "ldh 0\n") ++ "ldh -1"
+
+
+
+
+Standard library
 
 > callPrint :: GramType -> Environment ()
 > callPrint (GramBasicType _ CharType) = write "bsr __print_char"
@@ -252,11 +331,13 @@ Overloading handlers
 > callPrint t@(GramTupleType _ _ _) = do
 >   typeFrame t
 >   write "lds -1\nbsr __print_tuple"
-> callPrint (GramIdType _) = write "bsr __exc_untyped_variable"
+> callPrint t@(GramIdType _) = do
+>   typeFrame t
+>   write "lds -1\nbsr __print"
 
 > generatePrint :: Maybe GramType -> Environment ()
 > generatePrint Nothing = do
->   write "__print: lds -2\nldh -1\nldr PC\nadd\nstr PC"
+>   write "print: lds -2\nldh -1\nldr PC\nadd\nstr PC"
 >   write "bra __print_char\nbra __print_int\nbra __print_bool\nbra __print_list\nbra __print_tuple\nbra __exc_untyped_variable"
 > generatePrint (Just (GramBasicType _ CharType)) = write "__print_char: lds -1\ntrap 1\nret"
 > generatePrint (Just (GramBasicType _ IntType))  = write "__print_int: lds -1\ntrap 0\nret"
@@ -273,7 +354,7 @@ Overloading handlers
 >   write "lds -1\nbrf print_list_post" -- check for empty list
 >   write "print_list_elem: lds -2\nldh 0" -- load inner type frame
 >   write "lds -2\nldh -1" -- load head
->   write "bsr __print\najs -2" -- print head 
+>   write "bsr print\najs -2" -- print head 
 >   write "lds -1\nldh 0\nbrf print_list_post" -- close singleton list
 >   printText ", "
 >   write "lds -1\nldh 0\nsts -2\nbra print_list_elem" -- for longer lists, recurse
@@ -285,27 +366,27 @@ Overloading handlers
 >   printChar '('
 >   write "lds -2\nldh 0\nldh -1" -- load left type frame
 >   write "lds -2\nldh -1" -- load left element
->   write "bsr __print\najs -2" -- print left element
+>   write "bsr print\najs -2" -- print left element
 >   printText ", "
 >   write "lds -2\nldh 0\nldh 0" -- load right type frame
 >   write "lds -2\nldh 0" -- load right element
->   write "bsr __print\najs -2" -- print right element
+>   write "bsr print\najs -2" -- print right element
 >   printChar ')'
 >   write "ret"   
-
 
 > callEquals :: GramType -> Environment ()
 > callEquals (GramBasicType _ CharType) = write "eq"
 > callEquals (GramBasicType _ IntType) = write "eq"
-> callEquals (GramBasicType _ BoolType) = write "bsr __eq_bool\nldr RR"
+> callEquals (GramBasicType _ BoolType) = write "bsr __eq_bool\najs -2\nldr RR"
 > callEquals t@(GramListType _ _) = do
 >   typeFrame t
 >   write "lds -2\nlds -2\nbsr __eq_list\najs -5\nldr RR"
 > callEquals t@(GramTupleType _ _ _) = do
 >   typeFrame t
 >   write "lds -2\nlds -2\nbsr __eq_tuple\najs -5\nldr RR"
-> callEquals (GramIdType _) = write "bsr __exc_untyped_variable"
-
+> callEquals t@(GramIdType _) = do
+>   typeFrame t
+>   write "lds -2\nlds -2\nbsr __eq\najs -5\nldr RR"
 
 > generateEquals :: Maybe GramType -> Environment ()
 > generateEquals Nothing = do
@@ -335,36 +416,10 @@ Overloading handlers
 >   write "bsr __eq\najs -3\nret" -- compare right elements
 >   write "__eq_tuple_retfalse: ldc 0\nstr RR\nret"
 
-
-Type frame handlers
-
-A type frame is generated during an overloaded operation such as (==) or print.
-This contains type information so that it can be decided which print/equals methods 
-should be used, dynamically, during execution. In particular, types containing types 
-(e.g., lists and tuples) use this information to determine at runtime 
-which print/equals functions should be called for their elements.
-
-A type frame is a tuple defined as follows.
-Here, TF_element, TF_fst and TF_snd are type frames for the contained types.
-_char, _list, etc. are offsets used by print/equals to find the right implementation.
-int/char/bool: TF = (_char/_int/_bool, null)
-list: TF = (_list, TF_element)
-tuple: TF = (_tuple, (TF_fst, TF_snd))
-
-> typeFrame :: GramType -> Environment ()
-> typeFrame (GramBasicType _ CharType) = write "ldc 3\nldc 0\nstmh 2"
-> typeFrame (GramBasicType _ IntType)  = write "ldc 5\nldc 0\nstmh 2"
-> typeFrame (GramBasicType _ BoolType) = write "ldc 7\nldc 0\nstmh 2"
-> typeFrame (GramListType _ t) = do
->   write "ldc 9"
->   typeFrame t
->   write "stmh 2"
-> typeFrame (GramTupleType _ t1 t2) = do
->   write "ldc 11"
->   typeFrame t1
->   typeFrame t2
->   write "stmh 2\nstmh 2"
-> typeFrame (GramIdType _) = write "ldc 13\nldc 0\nstmh 2"
+> generateIsEmpty :: Environment ()
+> generateIsEmpty = do
+>   write "\n;define isEmpty"
+>   write "isEmpty: lds -1\nldc 0\neq\nstr RR\nret\n"
 
 
 
@@ -375,12 +430,8 @@ Standard library handlers
 >    polyBuildIn "==" generateEquals,
 >    generateIsEmpty,
 >    runTimeException "__exc_empty_list_traversal" "Runtime exception: empty list traversed",
->    runTimeException "__exc_untyped_variable" "Runtime exception: could not resolve overloading for print"]
-
-> generateIsEmpty :: Environment ()
-> generateIsEmpty = do
->   write "\n;define isEmpty"
->   write "isEmpty: lds -1\nldc 0\neq\nstr RR\nret\n"
+>    runTimeException "__exc_untyped_variable" "Runtime exception: could not resolve overloading for print",
+>    runTimeException "__exc_unknown_error" "Runtime exception: an unknown error occurred"]
 
 > polyBuildIn :: String -> (Maybe GramType -> Environment ()) -> Environment ()
 > polyBuildIn s f = do
@@ -433,8 +484,6 @@ Post-processing
 
 
 
-
-
 Scope handlers
 
 > pushScope :: Environment ()
@@ -476,7 +525,7 @@ Variable handlers
 > lookupVar varId = do
 >   (ss, _) <- get
 >   return $ lookupVar' varId ss
->   where lookupVar' _ [] = ("ldl " ++ show (-999), "stl " ++ show(-999))
+>   where lookupVar' _ [] = ("bra __exc_unknown_error", "bra __exc_unknown_error")
 >         lookupVar' varId ((_,v):vs) =
 >           case lookup varId v of
 >             Nothing -> lookupVar' varId vs

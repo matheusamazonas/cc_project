@@ -1,11 +1,12 @@
 Extension:
 - higher-order functions + type inference
 - possibly: lambda expressions (if so, look at closures and value restriction online)
+- possibly: structs and classes
 
 
 Bigger improvements:
-- polymorphic overloading (propagate type frames)
 - only include actually-used parts of the standard library 
+- user-thrown exceptions
 - move data segment to space after code segment
   x placeholder labels into string postproc to resolve statically?
   x count #instructions + #arguments to find end of code block
@@ -19,4 +20,6 @@ Possible little improvements:
 - string literals (convert "lol" into 'l':'o':'l':[] and display as string?)
 - for loops (convert to while loop in code gen)
 - graceful error when no main available
-
+- graceful lexer error
+- prepend e.g. "[PARSE ERROR]" to parsing errors, etc.
+- store type frame in tree structure, instead of a list
