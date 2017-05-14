@@ -742,7 +742,10 @@ Tree post-decoration - stage 3
 >     ts <- postDecorateTypes ts
 >     es <- postDecorateExprs es
 >     tret <- retType id
->     return (tret, i, p, GramOverloadedFunCall ts id es)
+>     tfun <- getVarType id
+>     case tfun of
+>       TFunc _ _ -> return (tret, i, p, GramFunCall id es)
+>       TScheme tsigs _ -> return (tret, i, p, GramOverloadedFunCall (filterTypes tsigs ts) id es)
 >   where postDecorateExprs [] = return []
 >         postDecorateExprs (e:es) = do
 >           e <- postDecorateExpr e
@@ -759,6 +762,14 @@ Tree post-decoration - stage 3
 >             TScheme targs tret -> convert tret
 >             TFunc targs tret   -> convert tret
 >           return tret
+>         filterTypes [] [] = []
+>         filterTypes (tsig:tsigs) (targ:targs)
+>           | isFree tsig = targ : filterTypes tsigs targs
+>           | otherwise = filterTypes tsigs targs
+>         isFree (TFree _) = True
+>         isFree (TList t) = isFree t
+>         isFree (TTuple t1 t2) = isFree t1 || isFree t2
+>         isFree _ = False
 
 
 
