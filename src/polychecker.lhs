@@ -745,7 +745,8 @@ Tree post-decoration - stage 3
 >     tfun <- getVarType id
 >     case tfun of
 >       TFunc _ _ -> return (tret, i, p, GramFunCall id es)
->       TScheme tsigs _ -> return (tret, i, p, GramOverloadedFunCall (filterTypes tsigs ts) id es)
+>       TScheme tsigs _ -> let annots = evalState (typeAnnotations (map convertToGramType tsigs) ts) [] in 
+>         return (tret, i, p, GramOverloadedFunCall annots id es)
 >   where postDecorateExprs [] = return []
 >         postDecorateExprs (e:es) = do
 >           e <- postDecorateExpr e
@@ -762,14 +763,27 @@ Tree post-decoration - stage 3
 >             TScheme targs tret -> convert tret
 >             TFunc targs tret   -> convert tret
 >           return tret
->         filterTypes [] [] = []
->         filterTypes (tsig:tsigs) (targ:targs)
->           | isFree tsig = targ : filterTypes tsigs targs
->           | otherwise = filterTypes tsigs targs
->         isFree (TFree _) = True
->         isFree (TList t) = isFree t
->         isFree (TTuple t1 t2) = isFree t1 || isFree t2
->         isFree _ = False
+>         typeAnnotations :: [GramType] -> [GramType] -> State [String] [GramType]
+>         typeAnnotations [] [] = return []
+>         typeAnnotations (tsig:tsigs) (targ:targs) = do
+>           annot <- typeAnnotation tsig targ
+>           annots <- typeAnnotations tsigs targs
+>           return $ annot ++ annots
+>         typeAnnotation :: GramType -> GramType -> State [String] [GramType]
+>         typeAnnotation (GramIdType (Id _ id)) t
+>           | (length id >= 2) && (head id == 'v') = do
+>             ids <- get
+>             if tail id `elem` ids then return []
+>             else do
+>               put $ (tail id):ids
+>               return [t]
+>           | otherwise = return []
+>         typeAnnotation (GramListType _ tsig) (GramListType _ targ) = typeAnnotation tsig targ
+>         typeAnnotation (GramTupleType _ tsig1 tsig2) (GramTupleType _ targ1 targ2) = do
+>           annots1 <- typeAnnotation tsig1 targ1 
+>           annots2 <- typeAnnotation tsig2 targ2
+>           return $ annots1 ++ annots2
+>         typeAnnotation _ _ = return []
 
 
 
