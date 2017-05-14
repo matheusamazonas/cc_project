@@ -120,9 +120,10 @@ with type annotations in /*comments*/
 > inferDeclBlock :: [GramDecl] -> Environment [GramDecl]
 > inferDeclBlock ds = do
 >   checkRecursiveVars ds
+>   nxt <- counter
 >   inferDeclsHeader ds
 >   ds <- inferDeclsBody ds
->   ds <- inferDeclsPost ds
+>   ds <- inferDeclsPost nxt ds
 >   return ds
 >   where inferDeclsHeader [] = return ()
 >         inferDeclsHeader (decl:decls) = do
@@ -141,16 +142,16 @@ with type annotations in /*comments*/
 >               return $ GramDeclFun fundecl
 >           decls <- inferDeclsBody decls
 >           return $ decl:decls
->         inferDeclsPost [] = return []
->         inferDeclsPost (decl:decls) = do
+>         inferDeclsPost _ [] = return []
+>         inferDeclsPost nxt (decl:decls) = do
 >           decl <- case decl of
 >             GramDeclVar vardecl -> do
 >               vardecl <- inferVarDeclPost vardecl
 >               return $ GramDeclVar vardecl
 >             GramDeclFun fundecl -> do
->               fundecl <- inferFunDeclPost fundecl
+>               fundecl <- inferFunDeclPost nxt fundecl
 >               return $ GramDeclFun fundecl
->           decls <- inferDeclsPost decls
+>           decls <- inferDeclsPost nxt decls
 >           return $ decl:decls
 
 > checkRecursiveVars :: [GramDecl] -> Environment () -- forbids otherwise allowed "var flip = 0:flop; var flop = 1:flip;"
@@ -420,11 +421,12 @@ with type annotations in /*comments*/
 > inferFunCall orig@(GramFunCall id@(Id p i) args) = do
 >   tfun <- getVarType id
 >   assertFunc tfun id
->   tfun <- instantiate tfun
+>   (tfun, isScheme) <- instantiate tfun
 >   let TFunc argtypes tret = tfun
 >   (args, argtypes) <- inferArgs id args argtypes
 >   tret <- convert tret
->   return (p, tret, GramOverloadedFunCall argtypes id args)
+>   if isScheme then return (p, tret, GramOverloadedFunCall argtypes id args)
+>   else return (p, tret, GramFunCall id args)
 >   where inferArgs _ [] [] = return ([],[])
 >         inferArgs id (e:es) (targ:targs) = do
 >           e <- addErrorDesc "Given argument has wrong type: " $ inferExpr e targ
@@ -538,9 +540,9 @@ with type annotations in /*comments*/
 >   return $ GramVarDeclType (convertToGramType t) vartail
 > inferVarDeclPost vardecl = return vardecl -- if type already given
 
-> inferFunDeclPost :: GramFuncDecl -> Environment GramFuncDecl
-> inferFunDeclPost (GramFuncDecl id (GramFuncDeclTail fargs _ stmts)) = do
->   generalise id
+> inferFunDeclPost :: Int -> GramFuncDecl -> Environment GramFuncDecl
+> inferFunDeclPost nxt (GramFuncDecl id (GramFuncDeclTail fargs _ stmts)) = do
+>   generalise nxt id
 >   tfun <- getVarType id
 >   let ftypes = [funType tfun]
 >   return $ GramFuncDecl id (GramFuncDeclTail fargs ftypes stmts)
@@ -555,19 +557,16 @@ with type annotations in /*comments*/
  Type scheme handlers - stage 2c
 ===============================================================================
 
-> generalise :: GramId -> Environment ()
-> generalise id@(Id p i) = do
->     s <- get
+> generalise :: Int -> GramId -> Environment ()
+> generalise bstart id@(Id p i) = do
+>     (subs, scopes, nextvar) <- get
+>     fid  <- getVarId id
 >     tfun <- getVarType id
->     let internaltypes = internals s i tfun
->     if null internaltypes then return ()
+>     if all (<bstart) $ instantiated subs tfun then return ()
 >     else do
 >       if (not $ retInstantiated tfun) then throwError ("Cannot infer type of non-terminating function: " ++ i, p)
 >       else do
->         fid <- getVarId id
->         s <- get
->         let (subs, scopes, nextvar) = s
->         let newsubs = replaceSub subs fid $ scheme tfun internaltypes
+>         let newsubs = replaceSub subs fid $ scheme bstart tfun
 >         put (newsubs, scopes, nextvar)
 >   where retInstantiated (TFunc targs (TVar i)) = occurs i (TFunc targs TVoid)
 >         retInstantiated (TFunc _ _) = True -- needs to be changed for HOF (e.g., for (.))
@@ -575,22 +574,22 @@ with type annotations in /*comments*/
 >         replaceSub ((i,t):subs) fid tscheme
 >           | i == fid  = (i,tscheme) : subs
 >           | otherwise = (i,t) : (replaceSub subs fid tscheme)
->         scheme (TFunc targs tret) ints = TScheme (map (quantify ints) targs) (quantify ints tret)
->         quantify ints t@(TVar i)
->           | i `elem` ints = TFree i
+>         scheme bstart (TFunc targs tret) = TScheme (map (quantify bstart) targs) (quantify bstart tret)
+>         quantify bstart t@(TVar i)
+>           | i >= bstart = TFree i
 >           | otherwise = t
->         quantify ints (TList t)= TList $ quantify ints t
->         quantify ints (TTuple t1 t2) = TTuple (quantify ints t1) (quantify ints t2)
+>         quantify bstart (TList t) = TList $ quantify bstart t
+>         quantify bstart (TTuple t1 t2) = TTuple (quantify bstart t1) (quantify bstart t2)
 >         quantify _ t = t
 
-> instantiate :: Type -> Environment Type
+> instantiate :: Type -> Environment (Type, Bool)
 > instantiate (TScheme targs tret) = do
 >   vfun <- fresh
 >   (args,insts) <- instantiateArgs [] targs
 >   (ret,_) <- instantiateArg insts tret
 >   let tfun = TFunc args ret
 >   unify nP vfun tfun
->   return tfun
+>   return (tfun, True)
 >   where instantiateArgs :: [(Type,Type)] -> [Type] -> Environment ([Type], [(Type,Type)])
 >         instantiateArgs insts [] = return ([], insts)
 >         instantiateArgs insts (t:ts) = do
@@ -613,13 +612,13 @@ with type annotations in /*comments*/
 >           (newt2, newinsts2) <- instantiateArg newinsts1 t2
 >           return (TTuple newt1 newt2, newinsts2)
 >         instantiateArg insts t = return (t, insts)
-> instantiate t = return t
+> instantiate t = return (t, True)
 
-> internals :: EnvType -> String -> Type -> [Int]
-> internals (subs, scopes, nextvar) fid v = typerefs \\ externals
->   where typerefs = instantiated subs v
->         externals = concat [instantiated subs (TVar i) | (id,i) <- scope, id /= fid]
->         scope = last scopes
+ internals :: EnvType -> String -> Type -> [Int]
+ internals (subs, scopes, nextvar) fid v = typerefs \\ externals
+   where typerefs = instantiated subs v
+         externals = concat [instantiated subs (TVar i) | (id,i) <- scope, id /= fid]
+         scope = last scopes
 
 > instantiated :: SubList -> Type -> [Int]
 > instantiated subs (TFunc [] tret) = instantiated subs tret
@@ -627,8 +626,8 @@ with type annotations in /*comments*/
 > instantiated subs (TList t) = instantiated subs t
 > instantiated subs (TTuple t1 t2) = nub $ (instantiated subs t1) ++ (instantiated subs t2)
 > instantiated subs (TVar i) = case lookup i subs of
+>   Just t  -> instantiated subs t
 >   Nothing -> [i]
->   Just t  -> i : instantiated subs t
 > instantiated _ _ = []
 
 
@@ -878,6 +877,11 @@ Tree post-decoration - stage 3
 >           case lookup i subs of
 >             Just t  -> (i,t)       : globalSubs subs scope
 >             Nothing -> (i, TVar i) : globalSubs subs scope
+
+> counter :: Environment Int
+> counter = do
+>   (_,_,i) <- get
+>   return i
 
 
 ===============================================================================
