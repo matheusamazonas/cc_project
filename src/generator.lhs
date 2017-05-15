@@ -285,9 +285,12 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >         repl c = c
 
 > functionTypeFrame :: [GramType] -> Environment ()
+> functionTypeFrame [t] = typeFrame t
 > functionTypeFrame ts = do
->   mapM_ typeFrame ts
->   sequence_ $ replicate (length ts - 1) $ write "stmh 2"
+>   let (l, r) = splitAt ((length ts + 1) `div` 2) ts
+>   functionTypeFrame l
+>   functionTypeFrame r
+>   write "stmh 2"
 
 > addTypeFrameArgs :: Int -> [GramType] -> Environment ()
 > addTypeFrameArgs locali ts = do
@@ -302,7 +305,7 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >         addTypeFrameArg locali numFrames i id = do
 >           (((d,v):ss), nxt) <- get
 >           let fid = "__tf_" ++ id
->           let loadIns = "ldl -" ++ show (2+locali) ++ "\n" ++ getTypeFrame numFrames i
+>           let loadIns = removeFinalNewline $ "ldl -" ++ show (2+locali) ++ "\n" ++ getTypeFrame numFrames i
 >           let storeIns = "bra __exc_unknown_error"
 >           put ((d,(fid, (loadIns, storeIns)):v):ss, nxt)
 >         freeTypeVars (GramIdType (Id _ id)) 
@@ -311,11 +314,14 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >         freeTypeVars (GramListType _ t) = freeTypeVars t
 >         freeTypeVars (GramTupleType _ t1 t2) = freeTypeVars t1 ++ freeTypeVars t2
 >         freeTypeVars _ = []
->         getTypeFrame numFrames i
->           | numFrames == 1 = ""
->           | i == numFrames-1 = concat $ replicate i "ldh 0\n"
->           | otherwise = (concat $ replicate i "ldh 0\n") ++ "ldh -1"
-
+>         getTypeFrame :: Int -> Int -> String
+>         getTypeFrame 1 _ = ""
+>         getTypeFrame numFrames i 
+>           | i+1 <= lsize = "ldh -1\n" ++ getTypeFrame lsize i
+>           | otherwise = "ldh 0\n" ++ getTypeFrame (numFrames-lsize) (i-lsize)
+>           where lsize = (numFrames + 1) `div` 2
+>         removeFinalNewline "" = ""
+>         removeFinalNewline s = init s
 
 
 

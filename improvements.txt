@@ -18,8 +18,8 @@ Possible little improvements:
   two functions chr and ord (Int->Char and vice versa)
   as a form of typecast (with null body in code gen)
 - string literals (convert "lol" into 'l':'o':'l':[] and display as string?)
+- list literals (write [1,2,3] instead of 1:2:3:[])
 - for loops (convert to while loop in code gen)
 - graceful error when no main available
 - graceful lexer error
 - prepend e.g. "[PARSE ERROR]" to parsing errors, etc.
-- store type frame in tree structure, instead of a list
