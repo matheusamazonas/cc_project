@@ -997,9 +997,13 @@ Tree post-decoration - stage 3
 ===============================================================================
 
 > initEnv :: EnvType
-> initEnv = ([(-4, tempty), (-2, tprint)],[[("print", -2), ("isEmpty", -4)]],0)
+> initEnv = ([(-2, tprint), (-4, tempty), (-5, tchr), (-6, tord), (-7, terror)],
+>            [[("print", -2), ("isEmpty", -4), ("chr", -5), ("ord", -6), ("error", -7)]],0)
 >   where tprint = TScheme [TFree (-1)] TVoid
 >         tempty = TScheme [TList (TFree (-3))] TBool
+>         tchr = TFunc [TInt] TChar
+>         tord = TFunc [TChar] TInt
+>         terror = TFunc [TList TChar] TVoid
 
 > nP :: SourcePos
 > nP = newPos "<internal>" 0 0

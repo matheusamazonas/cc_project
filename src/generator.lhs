@@ -327,20 +327,6 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 
 Standard library
 
-> callPrint :: GramType -> Environment ()
-> callPrint (GramBasicType _ CharType) = write "bsr __print_char"
-> callPrint (GramBasicType _ IntType)  = write "bsr __print_int"
-> callPrint (GramBasicType _ BoolType) = write "bsr __print_bool"
-> callPrint t@(GramListType _ _) = do
->   typeFrame t
->   write "lds -1\nbsr __print_list"
-> callPrint t@(GramTupleType _ _ _) = do
->   typeFrame t
->   write "lds -1\nbsr __print_tuple"
-> callPrint t@(GramIdType _) = do
->   typeFrame t
->   write "lds -1\nbsr __print"
-
 > generatePrint :: Maybe GramType -> Environment ()
 > generatePrint Nothing = do
 >   write "print: lds -2\nldh -1\nldr PC\nadd\nstr PC"
@@ -427,6 +413,19 @@ Standard library
 >   write "\n;define isEmpty"
 >   write "isEmpty: lds -1\nldc 0\neq\nstr RR\nret\n"
 
+> generateChrOrd :: Environment ()
+> generateChrOrd = do
+>   write "\n;define chr"
+>   write "chr: lds -1\nstr RR\nret\n"
+>   write "\n;define ord"
+>   write "ord: lds -1\nstr RR\nret\n"
+
+> generateError :: Environment ()
+> generateError = do
+>   write "\n; define error"
+>   label "error"
+>   typeFrame $ GramListType undefined $ GramBasicType undefined CharType
+>   write "lds -2\nldc 10\ntrap 1\nbsr print\nhalt"
 
 
 Standard library handlers
@@ -435,6 +434,8 @@ Standard library handlers
 >   [polyBuildIn "print" generatePrint,
 >    polyBuildIn "==" generateEquals,
 >    generateIsEmpty,
+>    generateChrOrd,
+>    generateError,
 >    runTimeException "__exc_empty_list_traversal" "Runtime exception: empty list traversed",
 >    runTimeException "__exc_untyped_variable" "Runtime exception: could not resolve overloading for print",
 >    runTimeException "__exc_unknown_error" "Runtime exception: an unknown error occurred"]

@@ -6,7 +6,6 @@ Extension:
 
 Bigger improvements:
 - only include actually-used parts of the standard library 
-- user-thrown exceptions
 - move data segment to space after code segment
   x placeholder labels into string postproc to resolve statically?
   x count #instructions + #arguments to find end of code block
@@ -14,12 +13,10 @@ Bigger improvements:
 
 
 Possible little improvements:
-- character arithmetic: make TInt and TChar unify, 
-  two functions chr and ord (Int->Char and vice versa)
-  as a form of typecast (with null body in code gen)
 - string literals (convert "lol" into 'l':'o':'l':[] and display as string?)
 - list literals (write [1,2,3] instead of 1:2:3:[])
 - for loops (convert to while loop in code gen)
 - graceful error when no main available
 - graceful lexer error
 - prepend e.g. "[PARSE ERROR]" to parsing errors, etc.
+- possibly: better solution for character arithmetic than chr, ord
