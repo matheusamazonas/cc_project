@@ -46,7 +46,7 @@
 > printDecl i (GramDeclVar vDecl) = printVarDecl i vDecl
 
 > printVarDecl :: Int -> GramVarDecl -> String
-> printVarDecl i (GramVarDeclType t declTail) = printType i t ++ " " ++ printVarDeclTail 0 declTail
+> printVarDecl i (GramVarDeclType t declTail) = printType i False t ++ " " ++ printVarDeclTail 0 declTail
 > printVarDecl i (GramVarDeclVar declTail) = tb i ++ "var " ++ printVarDeclTail 0 declTail
 
 > printFunDecl :: Int -> GramFuncDecl -> String
@@ -65,22 +65,24 @@
 >           ++ printMany printStmt 1 stmts ++ "}\n"
 
 > printRetType :: Int -> GramRetType -> String
-> printRetType i (GramRetType t) = printType i t
+> printRetType i (GramRetType t) = printType i False t
 > printRetType i (GramVoidType _) = tb i ++ "Void"
 
 > printFunType :: Int -> GramFunType -> String
 > printFunType i (GramFunType ts r) = 
 > 	        tb i ++ printMany printFTypes 0 ts ++ "-> " 
->           ++ printRetType 0  r 
+>           ++ printRetType 0 r 
 
 > printFTypes :: Int -> GramFTypes -> String
-> printFTypes i (GramFTypes t ts) = tb i ++ printType i t ++ " " ++ printMany printFTypes 0 ts
+> printFTypes i (GramFTypes t ts) = tb i ++ printType i False t ++ " " ++ printMany printFTypes 0 ts
 
-> printType :: Int -> GramType -> String
-> printType i (GramBasicType _ t) = printBasicType i t
-> printType i (GramTupleType _ t1 t2) = tb i ++ "(" ++ printType 0 t1 ++ ", " ++ printType 0 t2 ++ ")"
-> printType i (GramListType _ t) = tb i ++ "[" ++ printType 0 t ++ "]"
-> printType i (GramIdType (Id _ s)) = tb i ++ s
+> printType :: Int -> Bool -> GramType -> String
+> printType i _ (GramBasicType _ t) = printBasicType i t
+> printType i _ (GramTupleType _ t1 t2) = tb i ++ "(" ++ printType 0 True t1 ++ ", " ++ printType 0 True t2 ++ ")"
+> printType i _ (GramListType _ t) = tb i ++ "[" ++ printType 0 True t ++ "]"
+> printType i _ (GramIdType (Id _ s)) = tb i ++ s
+> printType i False (GramFunType _ targs tret) = tb i ++ "(" ++ printMany (\_ t -> printType 0 False t ++ " ") targs ++ "-> " ++ printType 0 False tret ++ ")"
+> printType i True (GramFunType _ targs tret) = tb i ++ printMany (\_ t -> printType 0 False t ++ " ") targs ++ "-> " ++ printType 0 False tret
 
 > printBasicType :: Int -> BasicType -> String
 > printBasicType i IntType = tb i ++ "Int"
@@ -133,8 +135,8 @@
 > printFuncall :: Int -> GramFunCall -> String
 > printFuncall i (GramOverloadedFunCall ts (Id _ fId) args) = tb i ++ "/*" ++ printTypes ts ++ "*/" ++ fId ++ "(" ++ printArgs 0 args ++ ")"
 >   where printTypes [] = ""
->         printTypes [t] = printType 0 t
->         printTypes (t:ts) = printType 0 t ++ "," ++ printTypes ts
+>         printTypes [t] = printType 0 False t
+>         printTypes (t:ts) = printType 0 False t ++ "," ++ printTypes ts
 > printFuncall i (GramFunCall (Id _ fId) args) = 
 >           tb i ++ fId ++ "(" 
 >           ++ printArgs 0 args ++ ")"
@@ -151,7 +153,7 @@
 > printExpr i (GramNum _ n)  = tb i ++ show n 
 > printExpr i (GramEmptyList _) = tb i ++ "[]"
 > printExpr i (GramExpTuple _ expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ ", " ++ printExpr 0 expr2 ++ ")"
-> printExpr i (GramOverloadedBinary _ t op expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ " /*" ++ printType 0 t ++ "*/" ++ printOp op ++ " " ++ printExpr 0 expr2 ++ ")"
+> printExpr i (GramOverloadedBinary _ t op expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ " /*" ++ printType 0 False t ++ "*/" ++ printOp op ++ " " ++ printExpr 0 expr2 ++ ")"
 > printExpr i (GramBinary _ op expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ " " ++ printOp op ++ " " ++ printExpr 0 expr2 ++ ")"
 > printExpr i (GramUnary _ op expr) = tb i ++ printOp op ++ printExpr 0 expr
 > printExpr i (GramExpFunCall call) = printFuncall i call

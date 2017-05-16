@@ -3,7 +3,7 @@
 > import Control.Monad.Except
 > import Control.Monad.State
 > import Data.Ord (comparing)
-> import Data.List ((\\), find, nub, sortBy)
+> import Data.List ((\\), find, isPrefixOf, nub, sortBy)
 > import Dependency
 > import Grammar
 > import Printer (printGram)
@@ -721,8 +721,8 @@ Tree post-decoration - stage 3
 > postDecorateExpr (GramOverloadedBinary p t op e1 e2) = do
 >   e1 <- postDecorateExpr e1
 >   e2 <- postDecorateExpr e2
->   t <- convert $ convertFromGramType t
->   return $ GramOverloadedBinary p (convertToGramType t) op e1 e2
+>   t <- convertGramType t
+>   return $ GramOverloadedBinary p t op e1 e2
 > postDecorateExpr (GramUnary p op e) = do
 >   e <- postDecorateExpr e
 >   return $ GramUnary p op e
@@ -771,7 +771,7 @@ Tree post-decoration - stage 3
 >           return $ annot ++ annots
 >         typeAnnotation :: GramType -> GramType -> State [String] [GramType]
 >         typeAnnotation (GramIdType (Id _ id)) t
->           | (length id >= 2) && (head id == 'v') = do
+>           | isPrefixOf "v__" id) = do
 >             ids <- get
 >             if tail id `elem` ids then return []
 >             else do
@@ -936,7 +936,8 @@ Tree post-decoration - stage 3
 >   unify p v tlist
 >   return (tlist, newinsts)
 > unifyWith insts v t = do
->   unify (getTypePos t) v (convertFromGramType t)
+>   t' <- convertFromGramType t
+>   unify (getTypePos t) v t'
 >   v <- convert v
 >   return (v, insts)
 
@@ -945,28 +946,49 @@ Tree post-decoration - stage 3
 >   t <- convert $ convertFromGramType gt
 >   return $ convertToGramType t
 
-> convertFromGramType :: GramType -> Type
-> convertFromGramType (GramBasicType _ BoolType) = TBool
-> convertFromGramType (GramBasicType _ CharType) = TChar
-> convertFromGramType (GramBasicType _ IntType)  = TInt
-> convertFromGramType (GramTupleType _ t1 t2)    = TTuple (convertFromGramType t1) (convertFromGramType t2)
-> convertFromGramType (GramListType _ t)         = TList (convertFromGramType t)
-> convertFromGramType (GramIdType (Id _ i)) -- quits ungracefully; TODO wrap in Environment
->   | (not $ null i) && head i == 't' =
->     case readMaybe (tail i) :: Maybe Int of
->       Just vid -> TVar vid
->   | (not $ null i) && head i == 'v' =
->     case readMaybe (tail i) :: Maybe Int of
->       Just vid -> TFree vid
+> convertFromGramType :: GramType -> Environment Type
+> convertFromGramType (GramBasicType _ BoolType) = return TBool
+> convertFromGramType (GramBasicType _ CharType) = return TChar
+> convertFromGramType (GramBasicType _ IntType)  = return TInt
+> convertFromGramType (GramTupleType _ t1 t2)    = do
+>   t1 <- convertFromGramType t1 
+>   t2 <- convertFromGramType t2
+>   return $ TTuple t1 t2
+> convertFromGramType (GramListType _ t)         = do
+>   t <- convertFromGramType t
+>   return $ TList t
+> convertFromGramType (GramIdType (Id _ i))
+>   | isPrefixOf "t__" i =
+>     case readMaybe (drop 3 i) :: Maybe Int of
+>       Just vid -> return TVar vid
+>       Nothing  -> fresh
+>   | isPrefixOf "v__" i =
+>     case readMaybe (drop 3 i) :: Maybe Int of
+>       Just vid -> return TFree vid
+>       Nothing  -> fresh
+>   | otherwise = fresh
+> convertFromGramType (GramFunType _ targs tret) = do
+>   targs <- mapM convertFromGramType targs
+>   tret <- convertFromGramType tret
+>   case any isPolymorph targs of
+>     True  -> return $ TScheme targs tret
+>     False -> return $ TFunc targs tret
+>   where isPolymorph (TFree _) = True
+>         isPolymorph (TList t) = isPolymorph t
+>         isPolymorph (TTuple t1 t2) = isPolymorph t1 || isPolymorph t2
+>         isPolymorph (TFunc targs tret) = any isPolymorph targs || isPolymorph tret
+>         isPolymorph _ = False
 
-> convertToGramType :: Type -> GramType -- HOF or function var.s not supported
-> convertToGramType TBool          = GramBasicType nP BoolType
-> convertToGramType TChar          = GramBasicType nP CharType
-> convertToGramType TInt           = GramBasicType nP IntType
-> convertToGramType (TTuple t1 t2) = GramTupleType nP (convertToGramType t1) (convertToGramType t2)
-> convertToGramType (TList t)      = GramListType nP (convertToGramType t)
-> convertToGramType (TVar i)       = GramIdType (Id nP ("t" ++ (show i)))
-> convertToGramType (TFree i)      = GramIdType (Id nP ("v" ++ (show i)))
+> convertToGramType :: Type -> GramType
+> convertToGramType TBool                = GramBasicType nP BoolType
+> convertToGramType TChar                = GramBasicType nP CharType
+> convertToGramType TInt                 = GramBasicType nP IntType
+> convertToGramType (TTuple t1 t2)       = GramTupleType nP (convertToGramType t1) (convertToGramType t2)
+> convertToGramType (TList t)            = GramListType nP (convertToGramType t)
+> convertToGramType (TVar i)             = GramIdType (Id nP ("t__" ++ (show i)))
+> convertToGramType (TFree i)            = GramIdType (Id nP ("v__" ++ (show i)))
+> convertToGramType (TFunc targs tret)   = GramFunType nP (map convertToGramType targs) (convertToGramType tret)
+> convertToGramType (TScheme targs tret) = GramFunType nP (map convertToGramType targs) (convertToGramType tret)
 
 > getTypePos :: GramType -> SourcePos
 > getTypePos (GramBasicType p _) = p
