@@ -192,7 +192,7 @@ with type annotations in /*comments*/
 >           v <- fresh
 >           arglist <- listArgs fargs
 >           return $ v:arglist
-> inferFunDeclHeader (GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs [GramFunType ftypes tret] stmts)) = do
+> inferFunDeclHeader (GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs [GramFunTypeAnnot ftypes tret] stmts)) = do
 >   vfun <- declareVar id
 >   vargs <- listArgs fargs
 >   vret <- fresh
@@ -546,8 +546,8 @@ with type annotations in /*comments*/
 >   tfun <- getVarType id
 >   let ftypes = [funType tfun]
 >   return $ GramFuncDecl id (GramFuncDeclTail fargs ftypes stmts)
->   where funType (TFunc targs tret)   = GramFunType (toFTypes targs) (retType tret)
->         funType (TScheme targs tret) = GramFunType (toFTypes targs) (retType tret)
+>   where funType (TFunc targs tret)   = GramFunTypeAnnot (toFTypes targs) (retType tret)
+>         funType (TScheme targs tret) = GramFunTypeAnnot (toFTypes targs) (retType tret)
 >         toFTypes = (foldr (\t1 t2 -> [GramFTypes t1 t2]) []) . (map convertToGramType)
 >         retType TVoid = GramVoidType nP
 >         retType t = GramRetType $ convertToGramType t
@@ -658,11 +658,11 @@ Tree post-decoration - stage 3
 >   return $ GramVarDeclType t $ GramVarDeclTail id e
 
 > postDecorateFunDecl :: GramFuncDecl -> Environment GramFuncDecl
-> postDecorateFunDecl (GramFuncDecl id (GramFuncDeclTail fargs [GramFunType ftypes tret] stmts)) = do
+> postDecorateFunDecl (GramFuncDecl id (GramFuncDeclTail fargs [GramFunTypeAnnot ftypes tret] stmts)) = do
 >   stmts <- postDecorateBlock stmts
 >   ftypes <- convertFTypes ftypes
 >   tret <- convertRetType tret
->   let funtype = GramFunType ftypes tret
+>   let funtype = GramFunTypeAnnot ftypes tret
 >   return $ GramFuncDecl id $ GramFuncDeclTail fargs [funtype] stmts
 >   where convertFTypes [] = return []
 >         convertFTypes [GramFTypes t ftypes] = do

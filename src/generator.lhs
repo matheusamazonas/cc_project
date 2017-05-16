@@ -74,8 +74,8 @@ Once implemented, generate = run generateProgram
 >       addArg argId argC
 >       addArgs' args (argC-1)
 
-> getFuncReturnType :: [GramFunType] -> GramRetType
-> getFuncReturnType ((GramFunType _ ret):_) = ret
+> getFuncReturnType :: [GramFunTypeAnnot] -> GramRetType
+> getFuncReturnType ((GramFunTypeAnnot _ ret):_) = ret
 
 > generateFunDecl :: GramFuncDecl -> Environment ()
 > generateFunDecl (GramFuncDecl (Id _ funId) (GramFuncDeclTail args types stmts)) = do
@@ -90,7 +90,7 @@ Once implemented, generate = run generateProgram
 >   case getFuncReturnType types of
 >     (GramVoidType _) -> if funId == "main" then write "halt" else write "unlink\nret"
 >     otherwise -> do return ()
->   where getArgTypes [GramFunType ftypes _] = getArgTypes' ftypes
+>   where getArgTypes [GramFunTypeAnnot ftypes _] = getArgTypes' ftypes
 >         getArgTypes' [] = []
 >         getArgTypes' [GramFTypes t ftypes] = t : getArgTypes' ftypes
 

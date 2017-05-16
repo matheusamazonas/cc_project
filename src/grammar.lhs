@@ -12,8 +12,8 @@
 >      Var GramId [GramField]
 >   deriving (Show, Eq)
 
-> data GramFunType = 
->      GramFunType [GramFTypes] GramRetType
+> data GramFunTypeAnnot = 
+>      GramFunTypeAnnot [GramFTypes] GramRetType
 >   deriving (Show, Eq)
 
 > data GramFTypes =
@@ -77,7 +77,7 @@
 >   deriving (Show, Eq)
 
 > data GramFuncDeclTail = 
->      GramFuncDeclTail [GramId] [GramFunType] [GramStmt]
+>      GramFuncDeclTail [GramId] [GramFunTypeAnnot] [GramStmt]
 >   deriving (Show, Eq)
 
 > data GramFuncDecl = 

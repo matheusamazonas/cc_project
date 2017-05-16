@@ -68,8 +68,8 @@
 > printRetType i (GramRetType t) = printType i False t
 > printRetType i (GramVoidType _) = tb i ++ "Void"
 
-> printFunType :: Int -> GramFunType -> String
-> printFunType i (GramFunType ts r) = 
+> printFunType :: Int -> GramFunTypeAnnot -> String
+> printFunType i (GramFunTypeAnnot ts r) = 
 > 	        tb i ++ printMany printFTypes 0 ts ++ "-> " 
 >           ++ printRetType 0 r 
 

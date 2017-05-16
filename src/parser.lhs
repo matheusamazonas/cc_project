@@ -148,13 +148,13 @@ Programming-style functions (->). Example:
         Int Int Char Bool -> Int
 Grammar: FunType = [ FTypes ] '->' RetType
 
-> pFunType :: MyParser GramFunType
+> pFunType :: MyParser GramFunTypeAnnot
 > pFunType = do
 >   opt <- optionMaybe pFTypes
 >   void $ isToken TokenFuncType 
 >   retType <- pRetType
 >   let fType = maybeToList opt in
->     return $ GramFunType fType retType
+>     return $ GramFunTypeAnnot fType retType
 
 Parser for function type list.
 Example: Int Int Char Bool
