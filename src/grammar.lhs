@@ -31,6 +31,7 @@
 >    | GramTupleType SourcePos GramType GramType 
 >    | GramListType SourcePos GramType 
 >    | GramFunType SourcePos [GramType] GramType
+>    | GramForAllType SourcePos [GramId] GramType
 >   deriving (Show, Eq)
 
 > data GramExp = 
