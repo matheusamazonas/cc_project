@@ -277,8 +277,8 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >   typeFrame t2
 >   write "stmh 2\nstmh 2"
 > typeFrame (GramIdType (Id _ id))
->   | isPrefixOf "t__" id) = do
->     (load, store) <- lookupVar $ "__tf_" ++ drop 3 id
+>   | isPrefixOf "_t" id = do
+>     (load, store) <- lookupVar $ "__tf_" ++ drop 2 id
 >     write $ repl load
 >   | otherwise = write "bra __exc_unknown_error"
 >   where repl "bra __exc_unknown_error" = "ldc 13\nldc 0\nstmh 2"
@@ -309,7 +309,7 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >           let storeIns = "bra __exc_unknown_error"
 >           put ((d,(fid, (loadIns, storeIns)):v):ss, nxt)
 >         freeTypeVars (GramIdType (Id _ id)) 
->           | isPrefixOf "v__" id) = [drop 3 id]
+>           | isPrefixOf "_v" id) = [drop 2 id]
 >           | otherwise = []
 >         freeTypeVars (GramListType _ t) = freeTypeVars t
 >         freeTypeVars (GramTupleType _ t1 t2) = freeTypeVars t1 ++ freeTypeVars t2

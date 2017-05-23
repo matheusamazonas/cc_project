@@ -81,8 +81,10 @@
 > printType i _ (GramTupleType _ t1 t2) = tb i ++ "(" ++ printType 0 True t1 ++ ", " ++ printType 0 True t2 ++ ")"
 > printType i _ (GramListType _ t) = tb i ++ "[" ++ printType 0 True t ++ "]"
 > printType i _ (GramIdType (Id _ s)) = tb i ++ s
-> printType i False (GramFunType _ targs tret) = tb i ++ "(" ++ printMany (\_ t -> printType 0 False t ++ " ") targs ++ "-> " ++ printType 0 False tret ++ ")"
-> printType i True (GramFunType _ targs tret) = tb i ++ printMany (\_ t -> printType 0 False t ++ " ") targs ++ "-> " ++ printType 0 False tret
+> printType i False (GramFunType _ targs tret) = tb i ++ "(" ++ printMany (\_ t -> printType 0 False t ++ " ") 0 targs ++ "-> " ++ printType 0 False tret ++ ")"
+> printType i True (GramFunType _ targs tret) = tb i ++ printMany (\_ t -> printType 0 False t ++ " ") 0 targs ++ "-> " ++ printType 0 False tret
+> printType i False (GramForAllType _ boundids t) = tb i ++ "(forall " ++ printMany (\_ (Id _ id) -> id ++ " ") 0 boundids ++ ". " ++ printType 0 True t ++ ")"
+> printType i True (GramForAllType _ boundids t) = tb i ++ "forall " ++ printMany (\_ (Id _ id) -> id ++ " ") 0 boundids ++ ". " ++ printType 0 True t
 
 > printBasicType :: Int -> BasicType -> String
 > printBasicType i IntType = tb i ++ "Int"

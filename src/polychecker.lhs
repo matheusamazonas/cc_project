@@ -1,9 +1,10 @@
 > module PolyChecker where
 
+> import Control.Monad
 > import Control.Monad.Except
 > import Control.Monad.State
 > import Data.Ord (comparing)
-> import Data.List ((\\), find, isPrefixOf, nub, sortBy)
+> import Data.List ((\\), find, intersect, isPrefixOf, nub, sortBy)
 > import Dependency
 > import Grammar
 > import Printer (printGram)
@@ -11,15 +12,22 @@
 > import Text.Read (readMaybe)
 > import Token 
 
-> data Type = TBool | TInt | TChar | TVoid | TTuple Type Type | TList Type | TFunc [Type] Type | TScheme [Type] Type | TVar Int | TFree Int
+> data Type = TBool | TInt | TChar | TVoid | TTuple Type Type | TList Type | TFunc [Type] Type | TVar VId | TBound VId | TSkolem VId | TForAll [VId] Type
 >   deriving (Show, Eq, Ord)
 
-> data RetType = DoesNotReturn | SometimesReturns Type | AlwaysReturns Type
+> type Monotype = Type -- no foralls
+> type RhoType = Type -- weak-prenex form: no top-level foralls (i.e., monotype or [polytype] -> polytype)
+> type Polytype = Type -- either monotype or forall a. rhotype for a number of a's
+> type VId = Int
+
+> data Expected t = Infer t | Check t
+
+> data Returns = DoesNotReturn | SometimesReturns | AlwaysReturns
 >   deriving (Show, Eq)
 
-> type SubList = [(Int, Type)]
-> type Scope = [(String, Int)]
-> type EnvType = (SubList, [Scope], Int)
+> type SubList = [(VId, Type)]
+> type Scope = [(String, VId)]
+> type EnvType = (SubList, [Scope], VId)
 > type TypeError = (String, SourcePos)
 
 > type Environment = StateT EnvType (Either TypeError)
@@ -27,9 +35,9 @@
 
 ===============================================================================
 ===============================================================================
-PolyTypeChecker
+PolyChecker
 
-Performs type checking and inference, and parse tree annotation.
+Performs type checking and inference, and syntax-tree annotation.
 
 This consists of the following major stages:
 1. dependency analysis
@@ -48,17 +56,21 @@ Applied per mutually recursive block, and divided into the following stages:
 	for variables, function arguments and return values,
 	so that blocks' type inference is order-independent.
 2b. Type inference and initial tree decoration
-    Entire tree is traversed and type inference based on algorithm M,
-	extended as necessary to functions and by-reference variables is performed.
+    The entire tree is traversed and type inference/checking is performed
+	based on the bidirectional Odersky-Läufer typing rules,
+	as described in [1]. Variable assignments and other syntactic structures
+	that were not in [1] were rewritten in terms of typing judgments within 
+	this system, and additional machinery for e.g. by-reference variables and
+	overloading was added on top of this where needed.
 	Tree decoration is performed on function calls and overloaded operators 
-	during traversal, meaning type variables
-	are left in annotations when still unresolved.
+	during traversal, meaning type variables are left in annotations 
+	when still unresolved (see step 3).
 2c. Generalisation and global type annotations
     Functions with unresolved argument types are generalised
 	to polymorphic type schemes, such as in e.g. the identity function.
 	This can only happen after the entire mutually recursive block has been
 	processed by type inference, hence the need for a separate stage. 
-	Furthermore, variables and function types are annotated with their types.
+	Furthermore, global variables and functions are annotated with their types.
 
 3. Post-inference decoration
 Traverses the tree once more, to finalise tree decorations by substituting in
@@ -68,11 +80,9 @@ possibly before type information becomes available.
 
 Notes:
 Called with inferProg, returning only the decorated tree.
-See note above inferProg for a way to display found type information and
-the annotated program.
-Does not support higher-order functions.
-Does not support assignment of functions to variables
-(aliasing, e.g. "var p = isEmpty; var true = p([])").
+[1] Jones, S. P., Vytiniotis, D., Weirich, S., & Shields, M. (2007).
+    Practical type inference for arbitrary-rank types.
+	Journal of functional programming, 17(01), 1-82.
 ===============================================================================
 ===============================================================================
 
@@ -81,13 +91,12 @@ Does not support assignment of functions to variables
  Known issues / improvements
 ===============================================================================
 
-TBD: char vs int? currently arithmetic works only for integers.
-     char arithmetic is nice ('0' + i), but chars are to be printed as chars.
-	 so TChar cannot be removed.. how to solve? 
-	 TChar and TInt cannot simply unify because '0'+2 or '7'-'0' needs to be
-	 TChar, but 1+1 needs to be TInt in GramBinary Plus
-TODO: disallow custom type annotations for variable declarations 
-
+Polytype attributions don't seem to work properly yet:
+"id(x) { return x; } addOne(x) { return x+1; } f() { var g = id; g = addOne; return g; } var x = f(); var y = x(True);"
+shows f() is inferred to have type forall a. -> (a -> a) and thus apply to True,
+because g is inferred to have type forall a. a -> a (the type of id).
+The attribution of addOne :: Int -> Int to g should not be allowed as it is not
+general enough to match g, but the attribution seems to have no effect.
 
 
 
@@ -95,42 +104,40 @@ TODO: disallow custom type annotations for variable declarations
  Top-level structure
 ===============================================================================
 
-N.B. returning Right $ (cleanEnv env, printGram annot) instead of Right annot
-returns (EnvType, String) with a cleaned-up environment containing
-types for variables and functions, and the pretty-printed parse tree
-with type annotations in /*comments*/
-
 > inferProg :: [GramDecl] -> Either TypeError [GramDecl]
 > inferProg decls =
 >   let declBlocks = Dependency.dependencyBlocks decls in
 >   case runStateT (addErrorDesc "[TYPE ERROR] " $ inference declBlocks) initEnv of
 >     Left e             -> Left e
 >     Right (annot, env) -> Right annot
->   where inference :: [[GramDecl]] -> Environment [GramDecl]
->         inference declBlocks = do
->           decls <- inferDeclBlocks declBlocks
->           postDecorate decls
->         inferDeclBlocks :: [[GramDecl]] -> Environment [GramDecl]
->         inferDeclBlocks [] = return []
->         inferDeclBlocks (block:blocks) = do
->           newblock <- inferDeclBlock block
->           blocklist <- inferDeclBlocks blocks
->           return $ newblock ++ blocklist
+
+> inference :: [[GramDecl]] -> Environment [GramDecl]
+> inference declBlocks = do
+>   decls <- inferDeclBlocks declBlocks
+>   postDecorate decls
+> inferDeclBlocks :: [[GramDecl]] -> Environment [GramDecl]
+> inferDeclBlocks [] = return []
+> inferDeclBlocks (block:blocks) = do
+>   newblock <- inferDeclBlock block
+>   blocklist <- inferDeclBlocks blocks
+>   return $ newblock ++ blocklist
 
 > inferDeclBlock :: [GramDecl] -> Environment [GramDecl]
 > inferDeclBlock ds = do
 >   checkRecursiveVars ds
->   nxt <- counter
->   inferDeclsHeader ds
+>   vs <- inferDeclsHeader ds
 >   ds <- inferDeclsBody ds
->   ds <- inferDeclsPost nxt ds
+>   if any isFunDecl ds then generalise vs
+>   else return ()
+>   ds <- inferDeclsPost ds
 >   return ds
->   where inferDeclsHeader [] = return ()
+>   where inferDeclsHeader [] = return []
 >         inferDeclsHeader (decl:decls) = do
->           case decl of
+>           v <- case decl of
 >             GramDeclVar vardecl -> inferVarDeclHeader vardecl
 >             GramDeclFun fundecl -> inferFunDeclHeader fundecl 
->           inferDeclsHeader decls
+>           vs <- inferDeclsHeader decls
+>           return $ v:vs
 >         inferDeclsBody [] = return []
 >         inferDeclsBody (decl:decls) = do
 >           decl <- case decl of
@@ -142,17 +149,19 @@ with type annotations in /*comments*/
 >               return $ GramDeclFun fundecl
 >           decls <- inferDeclsBody decls
 >           return $ decl:decls
->         inferDeclsPost _ [] = return []
->         inferDeclsPost nxt (decl:decls) = do
+>         inferDeclsPost [] = return []
+>         inferDeclsPost (decl:decls) = do
 >           decl <- case decl of
 >             GramDeclVar vardecl -> do
 >               vardecl <- inferVarDeclPost vardecl
 >               return $ GramDeclVar vardecl
 >             GramDeclFun fundecl -> do
->               fundecl <- inferFunDeclPost nxt fundecl
+>               fundecl <- inferFunDeclPost fundecl
 >               return $ GramDeclFun fundecl
->           decls <- inferDeclsPost nxt decls
+>           decls <- inferDeclsPost decls
 >           return $ decl:decls
+>         isFunDecl (GramDeclFun _) = True
+>         isFunDecl _ = False
 
 > checkRecursiveVars :: [GramDecl] -> Environment () -- forbids otherwise allowed "var flip = 0:flop; var flop = 1:flip;"
 > checkRecursiveVars decls = case find isVar decls of
@@ -168,8 +177,6 @@ with type annotations in /*comments*/
 >         getId (GramDeclVar (GramVarDeclType _ (GramVarDeclTail id _))) = id
 >         getId (GramDeclVar (GramVarDeclVar (GramVarDeclTail id _))) = id
 
-
-
 ===============================================================================
  Global declarations - stage 2a
 ===============================================================================
@@ -182,44 +189,32 @@ with type annotations in /*comments*/
 > inferFunDeclHeader :: GramFuncDecl -> Environment Type
 > inferFunDeclHeader (GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs [] stmts)) = do
 >   vfun <- declareVar id
->   arglist <- listArgs fargs
+>   vargs <- mapM (\_ -> fresh) fargs
 >   vret <- fresh
->   let tfun = TFunc arglist vret
+>   let tfun = TFunc vargs vret
 >   unify p vfun tfun
->   convert vfun
->   where listArgs [] = return []
->         listArgs (_:fargs) = do
->           v <- fresh
->           arglist <- listArgs fargs
->           return $ v:arglist
+>   return vfun
 > inferFunDeclHeader (GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs [GramFunTypeAnnot ftypes tret] stmts)) = do
 >   vfun <- declareVar id
->   vargs <- listArgs fargs
+>   vargs <- mapM (\_ -> fresh) fargs
 >   vret <- fresh
 >   (arglist, insts) <- listArgTypes id [] vargs ftypes
->   tret <- retType insts vret tret
+>   tret <- retType p insts vret tret
 >   let tfun = TFunc arglist tret
 >   unify p vfun tfun
->   convert vfun
->   where listArgs [] = return []
->         listArgs (_:fargs) = do
->           v <- fresh
->           arglist <- listArgs fargs
->           return $ v:arglist
->         listArgTypes _ insts [] [] = return ([], insts)
->         listArgTypes id insts (v:vars) [GramFTypes t ftypes] = do
->           (v, newinsts) <- unifyWith insts v t
+>   return vfun
+>   where listArgTypes _ insts [] [] = return ([], insts)
+>         listArgTypes id@(Id pos _) insts (v:vars) [GramFTypes t ftypes] = do
+>           (newinsts,v) <- unifyWith pos insts v t
 >           (arglist, finsts) <- listArgTypes id newinsts vars ftypes
 >           return $ (v:arglist, finsts)
 >         listArgTypes id@(Id pos i) _ _ _ = throwError ("Mismatching number of arguments in type signature: " ++ i, pos)
->         retType insts v (GramRetType t)  = do
->           (tret,_) <- unifyWith insts v t
+>         retType pos insts v (GramRetType t)  = do
+>           (_,tret) <- unifyWith pos insts v t
 >           return tret
->         retType insts v (GramVoidType p) = do
+>         retType _ insts v (GramVoidType p) = do
 >           unify p v TVoid
 >           return TVoid
-
-
 
 ===============================================================================
  High-level type inference - stage 2b
@@ -227,243 +222,278 @@ with type annotations in /*comments*/
 
 > inferVarDeclBody :: GramVarDecl -> Environment GramVarDecl
 > inferVarDeclBody vardecl = case vardecl of
->   GramVarDeclType t vardecltail -> do
->     (v, vardecltail) <- inferVarDeclTail vardecltail
->     unifyWith [] v t
->     return $ GramVarDeclType t vardecltail
+>   GramVarDeclType annot vardecltail -> do
+>     (i, p, v, e, vid) <- inferVarDeclTailPre vardecltail
+>     (_,poly) <- unifyWith p [] v annot
+>     e <- addErrorDesc ("Variable type annotation does not match given expression (" ++ i ++ "): ") $ replErr i $ checkTypePoly e poly
+>     generalise [v]
+>     inferVarDeclTailPost vardecltail v vid
+>     return $ GramVarDeclType annot $ GramVarDeclTail (Id p i) e
 >   GramVarDeclVar vardecltail    -> do
->     (_, vardecltail) <- inferVarDeclTail vardecltail
->     return $ GramVarDeclVar vardecltail
->   where inferVarDeclTail (GramVarDeclTail id@(Id p i) e) = do
+>     (i, p, v, e, vid) <- inferVarDeclTailPre vardecltail
+>     e <- addErrorDesc ("Variable declaration failed (" ++ i ++ "): ") $ replErr i $ inferExpr e $ Infer v
+>     generalise [v]
+>     inferVarDeclTailPost vardecltail v vid
+>     return $ GramVarDeclVar $ GramVarDeclTail (Id p i) e
+>   where inferVarDeclTailPre (GramVarDeclTail id@(Id p i) e) = do
 >           v <- getVarType id
 >           vid <- removeFromScope id
->           e <- replErr i $ inferExpr e v
+>           return (i, p, v, e, vid)
+>         inferVarDeclTailPost (GramVarDeclTail id@(Id p i) e) v vid = do
 >           v <- convert v
 >           addToScope id vid
 >           if occurs vid v then throwError ("Recursive variable definition detected: " ++ i, p)
->           else do
->             if isFunc v then throwError ("Variables cannot contain functions: " ++ i, p)
->             else return (v, GramVarDeclTail id e)
->         isFunc (TFunc _ _)   = True
->         isFunc (TScheme _ _) = True
->         isFunc _ = False
->         replErr var = replaceErrorDesc ("Variable out of scope: " ++ var) ("Recursive variable definition detected: " ++ var)
+>           else return ()
+>         replErr var = replaceErrorType ("Variable out of scope: " ++ var) ("Recursive variable definition detected: " ++ var)
 
 > inferFunDeclBody :: GramFuncDecl -> Environment GramFuncDecl
-> inferFunDeclBody (GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs ftypes stmts)) = do
+> inferFunDeclBody fd@(GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs ftypes stmts)) = do 
 >   fid <- getVarId id
 >   tfun <- getVarType id
 >   let TFunc arglist vret = tfun
 >   pushScope
 >   declareArgs fargs (fid+1)
 >   pushScope
->   (tret,stmts) <- inferStmtBlock stmts
+>   let texp = expected ftypes vret
+>   (tret,stmts) <- inferStmtBlock p stmts texp
 >   popScope
 >   popScope
->   case tret of
->     DoesNotReturn      -> unify p vret TVoid
->     AlwaysReturns t    -> unify p vret t
->     SometimesReturns t -> do
->       if t == TVoid then unify p vret TVoid
+>   case tret of 
+>     DoesNotReturn -> assertType p TVoid texp
+>     SometimesReturns -> do
+>       vret <- convert vret
+>       if vret == TVoid then return ()
 >       else throwError ("Non-void function contains non-returning code paths: " ++ i, p)
+>     AlwaysReturns -> return ()
 >   return $ GramFuncDecl id $ GramFuncDeclTail fargs ftypes stmts
 >   where declareArgs [] _ = return ()
 >         declareArgs (aid:fargs) ai = do
 >           addToScope aid ai
 >           declareArgs fargs (ai+1)
+>         expected [] t = Infer t
+>         expected _  t = Check t
 
-> inferStmtBlock :: [GramStmt] -> Environment (RetType, [GramStmt])
-> inferStmtBlock [] = return (DoesNotReturn, [])
-> inferStmtBlock (stmt:stmts) = do
->   (p, tret, stmt) <- inferStmt stmt
+===============================================================================
+ Global-level annotations - stage 2c
+===============================================================================
+
+> inferVarDeclPost :: GramVarDecl -> Environment GramVarDecl
+> inferVarDeclPost vardecl = do
+>   let (id,vartail) = readTail vardecl
+>   t <- getVarType id
+>   return $ GramVarDeclType (convertToGramType t) vartail
+>   where readTail (GramVarDeclVar vartail@(GramVarDeclTail id _)) = (id, vartail)
+>         readTail (GramVarDeclType _ vartail@(GramVarDeclTail id _)) = (id, vartail)
+
+> inferFunDeclPost :: GramFuncDecl -> Environment GramFuncDecl
+> inferFunDeclPost fd@(GramFuncDecl id (GramFuncDeclTail fargs _ stmts)) = do
+>   tfun <- getVarType id
+>   let ftypes = [funType tfun]
+>   return $ GramFuncDecl id (GramFuncDeclTail fargs ftypes stmts)
+>   where funType (TFunc targs tret) = GramFunTypeAnnot (toFTypes targs) (retType tret)
+>         funType (TForAll _ t) = funType t
+>         toFTypes = (foldr (\t1 t2 -> [GramFTypes t1 t2]) []) . (map convertToGramType)
+>         retType TVoid = GramVoidType nP
+>         retType t = GramRetType $ convertToGramType t
+
+
+
+===============================================================================
+ Function type inference/checking - stage 2b
+===============================================================================
+
+> inferStmtBlock :: SourcePos -> [GramStmt] -> Expected Polytype -> Environment (Returns, [GramStmt])
+> inferStmtBlock p [] texp = do
+>   return (DoesNotReturn, [])
+> inferStmtBlock _ (stmt:stmts) texp = do
+>   (p, tret, stmt) <- inferStmt stmt texp
 >   case tret of 
->     DoesNotReturn      -> do
->       (tret, stmts) <- inferStmtBlock stmts
+>     DoesNotReturn    -> do
+>       (tret, stmts) <- inferStmtBlock p stmts texp
 >       return (tret, stmt:stmts)
->     AlwaysReturns t1   ->
->       if null stmts then return $ (AlwaysReturns t1, [stmt])
+>     AlwaysReturns    ->
+>       if null stmts then return $ (AlwaysReturns, [stmt])
 >       else throwError ("Unreachable code detected", p)
->     SometimesReturns t1 -> do
->       (t2, stmts) <- inferStmtBlock stmts
->       t1 <- convert t1
->       case t2 of
->         DoesNotReturn -> return (SometimesReturns t1, stmt:stmts)
->         AlwaysReturns t2 -> do
->           addErrorDesc "Inconsistent return types: " $ unify p t2 t1
->           t2 <- convert t2
->           return (AlwaysReturns t2, stmt:stmts)
->         SometimesReturns t2 -> do
->           addErrorDesc "Inconsistent return types: " $ unify p t2 t1
->           t2 <- convert t2
->           return (SometimesReturns t2, stmt:stmts)
+>     SometimesReturns -> do
+>       texp2 <- expectedSubtype texp
+>       (tret, stmts) <- inferStmtBlock p stmts texp2
+>       case tret of
+>         DoesNotReturn -> return (SometimesReturns, stmt:stmts)
+>         AlwaysReturns -> do
+>           addErrorDesc "Inconsistent return types: " $ equivalent p texp texp2
+>           return (AlwaysReturns, stmt:stmts)
+>         SometimesReturns -> do
+>           addErrorDesc "Inconsistent return types: " $ equivalent p texp texp2
+>           return (SometimesReturns, stmt:stmts)
 
-> inferStmt :: GramStmt -> Environment (SourcePos, RetType, GramStmt)
-> inferStmt (GramIf p cond tr fa) = do
->   cond <- addErrorDesc "Non-boolean expression used as branch condition: " $ inferExpr cond TBool
+> inferStmt :: GramStmt -> Expected RhoType -> Environment (SourcePos, Returns, GramStmt)
+> inferStmt (GramIf p cond tr fa) texp = do
+>   cond <- addErrorDesc "Non-boolean expression used as branch condition: " $ inferExpr cond $ Check TBool
+>   exptr <- expectedSubtype texp
+>   expfa <- expectedSubtype texp
 >   pushScope
->   (t1, tr) <- inferStmtBlock tr
+>   (ret1, tr) <- inferStmtBlock p tr exptr
 >   popScope 
 >   pushScope
->   (t2, fa) <- inferStmtBlock fa
+>   (ret2, fa) <- inferStmtBlock p fa expfa
 >   popScope
 >   let stmt = GramIf p cond tr fa
->   if t1 == DoesNotReturn then (
->     if t2 == DoesNotReturn then return (p, DoesNotReturn, stmt)
->     else return (p, SometimesReturns $ typeof t2, stmt) )
->   else if t2 == DoesNotReturn then return (p, SometimesReturns $ typeof t1, stmt)
+>   if ret1 == DoesNotReturn then (
+>     if ret2 == DoesNotReturn then return (p, DoesNotReturn, stmt)
 >     else do
->       addErrorDesc "Inconsistent return types: " $ unify p (typeof t1) (typeof t2)
->       tret <- convert $ typeof t1
->       if (always t1 && always t2) then return (p, AlwaysReturns tret, stmt)
->       else return (p, SometimesReturns tret, stmt)
->   where typeof (SometimesReturns t) = t
->         typeof (AlwaysReturns t) = t
->         always (AlwaysReturns _) = True
->         always _ = False
-> inferStmt (GramWhile p cond lp) = do
->   cond <- addErrorDesc "Non-boolean expression used as loop condition: " $ inferExpr cond TBool
+>       propagateSubtype expfa texp
+>       return (p, SometimesReturns, stmt) )
+>   else if ret2 == DoesNotReturn then do
+>       propagateSubtype exptr texp
+>       return (p, SometimesReturns, stmt)
+>     else do
+>       addErrorDesc "Inconsistent return types: " $ equivalent p exptr expfa
+>       propagateSubtype exptr texp
+>       if (ret1 == AlwaysReturns && ret2 == AlwaysReturns) then return (p, AlwaysReturns, stmt)
+>       else return (p, SometimesReturns, stmt)
+> inferStmt (GramWhile p cond lp) texp = do
+>   cond <- addErrorDesc "Non-boolean expression used as loop condition: " $ inferExpr cond $ Check TBool
+>   explp <- expectedSubtype texp
 >   pushScope
->   (tret, lp) <- inferStmtBlock lp
+>   (tret, lp) <- inferStmtBlock p lp explp
 >   popScope
 >   let stmt = GramWhile p cond lp
->   case tret of
->     DoesNotReturn      -> return (p, DoesNotReturn, stmt)
->     SometimesReturns t -> return (p, SometimesReturns t, stmt)
->     AlwaysReturns t    -> return (p, SometimesReturns t, stmt)
-> inferStmt (GramReturn p ret) =
+>   if tret == DoesNotReturn then return (p, DoesNotReturn, stmt)
+>   else do
+>     propagateSubtype explp texp
+>     return (p, SometimesReturns, stmt)
+> inferStmt (GramReturn p ret) texp =
 >   case ret of
->     Nothing -> return $ (p, AlwaysReturns TVoid, GramReturn p Nothing)
+>     Nothing -> do
+>       assertType p TVoid texp
+>       return $ (p, AlwaysReturns, GramReturn p Nothing)
 >     Just e  -> do
->       v <- fresh
->       e <- inferExpr e v
->       v <- convert v
->       return $ (p, AlwaysReturns v, GramReturn p (Just e))
-> inferStmt (GramFunVarDecl vardecl) = do
+>       e <- inferExpr e texp
+>       return $ (p, AlwaysReturns, GramReturn p $ Just e)
+> inferStmt (GramFunVarDecl vardecl) texp = do
 >   inferVarDeclHeader vardecl
 >   vardecl <- inferVarDeclBody vardecl
 >   vardecl <- inferVarDeclPost vardecl
 >   return (getPos vardecl, DoesNotReturn, GramFunVarDecl vardecl)
 >   where getPos (GramVarDeclType _ (GramVarDeclTail (Id p i) _)) = p
 >         getPos (GramVarDeclVar    (GramVarDeclTail (Id p i) _)) = p
-> inferStmt (GramAttr p (Var id@(Id pos i) fields) e) = do
+> inferStmt (GramAttr p (Var id@(Id pos i) fields) e) texp = do
 >   vid <- getVarId id
 >   t <- getVarType id
->   if vid < 0 then throwError ("Cannot override built-in function: " ++ i, pos)
+>   if vid < 0 then throwError ("Cannot override built-in function " ++ i, pos)
 >   else do
->     if isFunc t then throwError ("Functions cannot be assigned to: " ++ i, pos)
->     else do
->       tfield <- fresh
->       inferField fields p tfield t
->       tfield <- convert tfield
->       e <- addErrorDesc ("Variable assignment failed (" ++ i ++ "): ") $ inferExpr e tfield
->       return (p, DoesNotReturn, GramAttr p (Var id fields) e)
->   where isFunc (TFunc _ _)   = True
->         isFunc (TScheme _ _) = True
->         isFunc _ = False
-> inferStmt (GramStmtFunCall funcall) = do
->   (p, _, funcall) <- inferFunCall funcall
+>     tfield <- fresh
+>     inferField fields p t $ Infer tfield
+>     checkTypePoly e tfield
+>     generalise [tfield]
+>     return (p, DoesNotReturn, GramAttr p (Var id fields) e)
+> inferStmt (GramStmtFunCall funcall) texp = do
+>   v <- fresh
+>   (p,_,_,funcall) <- inferFunCall funcall $ Infer v
 >   return (p, DoesNotReturn, GramStmtFunCall funcall)
 
-
 ===============================================================================
- Type inference algorithm M (Damas-Hindley-Milner) - stage 2b
+ Type inference/checking algorithm M (Damas-Hindley-Milner) - stage 2b
 ===============================================================================
 
-> inferExpr :: GramExp -> Type -> Environment GramExp
+> inferExpr :: GramExp -> Expected RhoType -> Environment GramExp
 > inferExpr orig@(GramBool p _) t = do
->   unify p t TBool
+>   assertType p TBool t
 >   return orig
-> inferExpr orig@(GramChar p _) t = do -- for stuff like int+'0', maybe treat chars as int?
->   unify p t TChar
+> inferExpr orig@(GramChar p _) t = do 
+>   assertType p TChar t
 >   return orig
 > inferExpr orig@(GramNum p _)  t = do
->   unify p t TInt
+>   assertType p TInt t
 >   return orig
 > inferExpr orig@(GramEmptyList p) t = do
 >   v <- fresh
->   unify p t (TList v)
+>   assertType p (TList v) t
 >   return orig
 > inferExpr (GramExpTuple p e1 e2) t = do
 >   v1 <- fresh
 >   v2 <- fresh
->   e1 <- inferExpr e1 v1
->   e2 <- inferExpr e2 v2
->   tup <- convert (TTuple v1 v2)
->   unify p t tup
+>   assertType p (TTuple v1 v2) t
+>   v1 <- convert v1
+>   e1 <- inferExpr e1 $ v1 `sameDirAs` t 
+>   v2 <- convert v2
+>   e2 <- inferExpr e2 $ v2 `sameDirAs` t
 >   return $ GramExpTuple p e1 e2
 > inferExpr (GramOverloadedBinary p _ op e1 e2) t = inferExpr (GramBinary p op e1 e2) t
 > inferExpr (GramBinary p op e1 e2) t = do
 >   (t1, t2, tret, ol) <- opType op
->   e1 <- inferExpr e1 t1
+>   e1 <- inferExpr e1 $ overloadDir ol $ t1
 >   t2 <- convert t2
->   e2 <- inferExpr e2 t2
->   unify p t tret
+>   e2 <- inferExpr e2 $ Check t2 
+>   tret <- convert tret
+>   assertType p tret t
 >   t1 <- convert t1
 >   if ol then return $ GramOverloadedBinary p (convertToGramType t1) op e1 e2
 >   else return $ GramBinary p op e1 e2
+>   where overloadDir False = Check
+>         overloadDir True  = Infer
 > inferExpr (GramUnary p op e) t = do
 >   (tel, _, tret, _) <- opType op
->   e <- inferExpr e tel
->   unify p t tret
+>   e <- inferExpr e $ Check tel
+>   assertType p tret t
 >   return $ GramUnary p op e
 > inferExpr orig@(GramExpId (Var vid@(Id p i) fields)) t = do
 >   vart <- getVarType vid
->   inferField fields p t vart
+>   inferField fields p vart t
 >   return orig
 > inferExpr (GramExpFunCall funcall) t = do
->   (p,tret,funcall) <- inferFunCall funcall
->   if tret == TVoid then throwError ("Void function used in an expression", p)
->   else addErrorDesc "Function return value used incorrectly: " $ unify p t tret
->   return $ GramExpFunCall funcall
+>   (p,i,tret,funcall) <- inferFunCall funcall t
+>   if tret == TVoid then throwError ("Void function (" ++ i ++ ") used in an expression", p)
+>   else return $ GramExpFunCall funcall
 
-> inferFunCall :: GramFunCall -> Environment (SourcePos, Type, GramFunCall)
-> inferFunCall (GramOverloadedFunCall _ id args) = inferFunCall (GramFunCall id args)
-> inferFunCall orig@(GramFunCall id@(Id p i) args) = do
->   tfun <- getVarType id
->   assertFunc tfun id
->   (tfun, isScheme) <- instantiate tfun
->   let TFunc argtypes tret = tfun
+> inferFunCall :: GramFunCall -> Expected RhoType -> Environment (SourcePos, String, Type, GramFunCall)
+> inferFunCall (GramOverloadedFunCall _ id args) texp = inferFunCall (GramFunCall id args) texp
+> inferFunCall orig@(GramFunCall id@(Id p i) args) texp = do
+>   tpolyfun <- getVarType id
+>   tfun <- instantiate tpolyfun
+>   (argtypes, tret) <- assertFunc p (length args) tfun
 >   (args, argtypes) <- inferArgs id args argtypes
 >   tret <- convert tret
->   if isScheme then return (p, tret, GramOverloadedFunCall argtypes id args)
->   else return (p, tret, GramFunCall id args)
->   where inferArgs _ [] [] = return ([],[])
->         inferArgs id (e:es) (targ:targs) = do
->           e <- addErrorDesc "Given argument has wrong type: " $ inferExpr e targ
+>   assertType p tret texp
+>   tret <- convert tret
+>   funid <- getVarId id
+>   let vfun = convertToGramType $ TVar funid
+>   if isPolymorph tpolyfun then return (p, i, tret, GramOverloadedFunCall (vfun:argtypes) id args)
+>   else return (p, i, tret, GramOverloadedFunCall [vfun] id args) -- this is a very ugly hack. however, for HOF the function name is removed from the scope
+>   where inferArgs _ [] [] = return ([],[]) --                       after function exit, and post-decoration requires the function variable ID to retrieve the
+>         inferArgs (Id _ i) (e:es) (targ:targs) = do --              function type, so that polymorphic function calls can be annotated. thus, we include the variable ID here.
+>           e <- addErrorDesc ("Argument to function " ++ i ++ " has wrong type: ") $ checkTypePoly e targ
 >           (es,targs) <- inferArgs id es targs
 >           targ <- convert targ
 >           return (e:es, convertToGramType targ : targs)
->         inferArgs (Id pos i) _ _ = throwError ("Mismatching number of arguments given to: " ++ i, pos)
->         assertFunc :: Type -> GramId -> Environment ()
->         assertFunc (TFunc _ _) _ = return ()
->         assertFunc (TScheme _ _) _ = return ()
->         assertFunc (TVar _) (Id pos i) = throwError ("Trying to call a variable as a function (higher-order type inference is not supported): " ++ i, pos) -- change for HOF
->         assertFunc _ (Id pos i) = throwError ("Trying to call a non-function variable as a function: " ++ i, pos)
+>         inferArgs (Id pos i) _ _ = throwError ("Mismatching number of arguments given to function: " ++ i, pos)
+>         isPolymorph (TForAll _ _) = True
+>         isPolymorph _ = False
 
-> inferField :: [GramField] -> SourcePos -> Type -> Type -> Environment ()
-> inferField [] p tret vart = unify p tret vart
-> inferField [First p fields] _ tret vart = do
+> inferField :: [GramField] -> SourcePos -> Type -> Expected Type -> Environment ()
+> inferField [] p vart tret = assertType p vart tret
+> inferField [First p fields] _ vart tret = do
 >   v1 <- fresh
 >   v2 <- fresh
->   unify p (TTuple v1 v2) vart
+>   addErrorDesc "fst applied to non-tuple variable: " $ unify p (TTuple v1 v2) vart
 >   v1 <- convert v1
->   inferField fields p tret v1
-> inferField [Second p fields] _ tret vart = do
+>   inferField fields p v1 tret 
+> inferField [Second p fields] _ vart tret = do
 >   v1 <- fresh
 >   v2 <- fresh
->   unify p (TTuple v1 v2) vart
+>   addErrorDesc "snd applied to non-tuple variable: " $ unify p (TTuple v1 v2) vart
 >   v2 <- convert v2
->   inferField fields p tret v2
-> inferField [Head p fields] _ tret vart = do
+>   inferField fields p v2 tret
+> inferField [Head p fields] _ vart tret = do
 >   v <- fresh
->   unify p (TList v) vart
+>   addErrorDesc "hd applied to non-list variable: " $ unify p (TList v) vart
 >   v <- convert v
->   inferField fields p tret v
-> inferField [Tail p fields] _ tret vart = do
+>   inferField fields p v tret
+> inferField [Tail p fields] _ vart tret = do
 >   v <- fresh
->   unify p (TList v) vart
+>   addErrorDesc "tl applied to non-list variable: " $ unify p (TList v) vart
 >   v <- convert v
->   inferField fields p tret (TList v)
+>   inferField fields p (TList v) tret
 
 > opType :: Operation -> Environment (Type, Type, Type, Bool)
 > opType op
@@ -471,169 +501,12 @@ with type annotations in /*comments*/
 >   | op `elem` [LessThan, LessOrEqual, GreaterThan, GreaterOrEqual] = return (TInt, TInt, TBool, False)
 >   | op `elem` [LogicalOr, LogicalAnd, LogicalNot] = return (TBool, TBool, TBool, False)
 >   | op `elem` [Equals, Different] = do { v <- fresh; return (v, v, TBool, True) }
->   | op == ListConst = do { v <- fresh; return (v, TList v, TList v, False) } -- may need to be annotated depending on code gen
-
-
-===============================================================================
- Unification algorithm U - stage 2b
-===============================================================================
-
-> unify :: SourcePos -> Type -> Type -> Environment ()
-> unify p t1 t2 = do 
->   t1 <- convert t1
->   t2 <- convert t2
->   sub <- lift $ unification p t1 t2
->   apply p sub
-
-> unification :: SourcePos -> Type -> Type -> Either TypeError SubList
-> unification _ TVoid TVoid  = Right []
-> unification _ TChar TChar  = Right []
-> unification _ TInt TInt    = Right []
-> unification _ TBool TBool  = Right []
-> unification p (TVar i) t
->   | t == (TVar i)          = Right []
->   | occurs i t             = Left ("Recursive type detected", p)
->   | otherwise              = Right [(i, t)]
-> unification p t (TVar i)
->   | t == (TVar i)          = Right []
->   | occurs i t             = Left ("Recursive type detected", p)
->   | otherwise              = Right [(i, t)]
-> unification p (TList ta) (TList tb) = unification p ta tb
-> unification p (TTuple ta1 ta2) (TTuple tb1 tb2) = do
->   sub1 <- unification p ta1 tb1
->   sub2 <- unification p (sub1 |-> ta2) (sub1 |-> tb2)
->   return $ sub1 ++ sub2
-> unification p (TFunc [] ta2) (TFunc [] tb2) = unification p ta2 tb2
-> unification p (TFunc (ta1:ta1s) ta2) (TFunc (tb1:tb1s) tb2) = do
->   sub1 <- unification p ta1 tb1
->   sub2 <- unification p (sub1 |-> (TFunc ta1s ta2)) (sub1 |-> (TFunc tb1s tb2))
->   return $ sub1 ++ sub2
-> unification p t1 t2 = Left ("Can't unify types " ++ show t1 ++ " and " ++ show t2, p)
-
-> occurs :: Int -> Type -> Bool
-> occurs i (TTuple ta tb)          = (occurs i ta) || (occurs i tb)
-> occurs i (TList t)               = occurs i t
-> occurs i (TFunc [] tb)           = (occurs i tb)
-> occurs i (TFunc (ta1:ta1s) tb)   = (occurs i ta1) || (occurs i (TFunc ta1s tb))
-> occurs i (TVar j)                = i == j
-> occurs _ _ = False
-
-> (|->) :: SubList -> Type -> Type
-> (|->) sub (TTuple ta tb)      = TTuple (sub |-> ta) (sub |-> tb)
-> (|->) sub (TList t)           = TList (sub |-> t)
-> (|->) sub (TFunc tas tb)      = TFunc (map (sub |->) tas) (sub |-> tb)
-> (|->) sub (TVar i)            = case lookup i sub of Just subbed -> sub |-> subbed
->                                                      Nothing     -> (TVar i)
-> (|->) _ t                     = t
-
-> infixr 3 |->
+>   | op == ListConst = do { v <- fresh; return (v, TList v, TList v, False) }
 
 
 
 ===============================================================================
- Global-level annotations - stage 2c
-===============================================================================
-
-> inferVarDeclPost :: GramVarDecl -> Environment GramVarDecl
-> inferVarDeclPost (GramVarDeclVar vartail@(GramVarDeclTail id e)) = do
->   t <- getVarType id
->   return $ GramVarDeclType (convertToGramType t) vartail
-> inferVarDeclPost vardecl = return vardecl -- if type already given
-
-> inferFunDeclPost :: Int -> GramFuncDecl -> Environment GramFuncDecl
-> inferFunDeclPost nxt (GramFuncDecl id (GramFuncDeclTail fargs _ stmts)) = do
->   generalise nxt id
->   tfun <- getVarType id
->   let ftypes = [funType tfun]
->   return $ GramFuncDecl id (GramFuncDeclTail fargs ftypes stmts)
->   where funType (TFunc targs tret)   = GramFunTypeAnnot (toFTypes targs) (retType tret)
->         funType (TScheme targs tret) = GramFunTypeAnnot (toFTypes targs) (retType tret)
->         toFTypes = (foldr (\t1 t2 -> [GramFTypes t1 t2]) []) . (map convertToGramType)
->         retType TVoid = GramVoidType nP
->         retType t = GramRetType $ convertToGramType t
-
-
-===============================================================================
- Type scheme handlers - stage 2c
-===============================================================================
-
-> generalise :: Int -> GramId -> Environment ()
-> generalise bstart id@(Id p i) = do
->     (subs, scopes, nextvar) <- get
->     fid  <- getVarId id
->     tfun <- getVarType id
->     if all (<bstart) $ instantiated subs tfun then return ()
->     else do
->       if (not $ retInstantiated tfun) then throwError ("Cannot infer type of non-terminating function: " ++ i, p)
->       else do
->         let newsubs = replaceSub subs fid $ scheme bstart tfun
->         put (newsubs, scopes, nextvar)
->   where retInstantiated (TFunc targs (TVar i)) = occurs i (TFunc targs TVoid)
->         retInstantiated (TFunc _ _) = True -- needs to be changed for HOF (e.g., for (.))
->         replaceSub [] fid tscheme = [(fid,tscheme)]
->         replaceSub ((i,t):subs) fid tscheme
->           | i == fid  = (i,tscheme) : subs
->           | otherwise = (i,t) : (replaceSub subs fid tscheme)
->         scheme bstart (TFunc targs tret) = TScheme (map (quantify bstart) targs) (quantify bstart tret)
->         quantify bstart t@(TVar i)
->           | i >= bstart = TFree i
->           | otherwise = t
->         quantify bstart (TList t) = TList $ quantify bstart t
->         quantify bstart (TTuple t1 t2) = TTuple (quantify bstart t1) (quantify bstart t2)
->         quantify _ t = t
-
-> instantiate :: Type -> Environment (Type, Bool)
-> instantiate (TScheme targs tret) = do
->   vfun <- fresh
->   (args,insts) <- instantiateArgs [] targs
->   (ret,_) <- instantiateArg insts tret
->   let tfun = TFunc args ret
->   unify nP vfun tfun
->   return (tfun, True)
->   where instantiateArgs :: [(Type,Type)] -> [Type] -> Environment ([Type], [(Type,Type)])
->         instantiateArgs insts [] = return ([], insts)
->         instantiateArgs insts (t:ts) = do
->           (newt, newinsts) <- instantiateArg insts t
->           (tlist,finsts) <- instantiateArgs newinsts ts 
->           return (newt:tlist, finsts)
->         instantiateArg :: [(Type,Type)] -> Type -> Environment (Type, [(Type,Type)])
->         instantiateArg insts v@(TFree i) =
->           case lookup v insts of
->             Just t  -> return (t, insts)
->             Nothing -> do
->               t <- fresh
->               let newinsts = (v,t) : insts
->               return (t, newinsts)
->         instantiateArg insts (TList t) = do
->           (newt, newinsts) <- instantiateArg insts t
->           return (TList newt, newinsts)
->         instantiateArg insts (TTuple t1 t2) = do
->           (newt1, newinsts1) <- instantiateArg insts t1
->           (newt2, newinsts2) <- instantiateArg newinsts1 t2
->           return (TTuple newt1 newt2, newinsts2)
->         instantiateArg insts t = return (t, insts)
-> instantiate t = return (t, True)
-
- internals :: EnvType -> String -> Type -> [Int]
- internals (subs, scopes, nextvar) fid v = typerefs \\ externals
-   where typerefs = instantiated subs v
-         externals = concat [instantiated subs (TVar i) | (id,i) <- scope, id /= fid]
-         scope = last scopes
-
-> instantiated :: SubList -> Type -> [Int]
-> instantiated subs (TFunc [] tret) = instantiated subs tret
-> instantiated subs (TFunc (targ:targs) tret) = nub $ (instantiated subs targ) ++ (instantiated subs $ TFunc targs tret)
-> instantiated subs (TList t) = instantiated subs t
-> instantiated subs (TTuple t1 t2) = nub $ (instantiated subs t1) ++ (instantiated subs t2)
-> instantiated subs (TVar i) = case lookup i subs of
->   Just t  -> instantiated subs t
->   Nothing -> [i]
-> instantiated _ _ = []
-
-
-
-===============================================================================
-Tree post-decoration - stage 3
+ Post-decoration - stage 3
 ===============================================================================
 
 > postDecorate :: [GramDecl] -> Environment [GramDecl]
@@ -722,7 +595,11 @@ Tree post-decoration - stage 3
 >   e1 <- postDecorateExpr e1
 >   e2 <- postDecorateExpr e2
 >   t <- convertGramType t
->   return $ GramOverloadedBinary p t op e1 e2
+>   if typeAllowed t then return $ GramOverloadedBinary p t op e1 e2
+>   else throwError ("Equality is not defined for functions", p)
+>   where typeAllowed (GramForAllType _ _ _) = False
+>         typeAllowed (GramFunType _ _ _) = False
+>         typeAllowed _ = True
 > postDecorateExpr (GramUnary p op e) = do
 >   e <- postDecorateExpr e
 >   return $ GramUnary p op e
@@ -734,36 +611,18 @@ Tree post-decoration - stage 3
 
 > postDecorateFunCall :: GramFunCall -> Environment (Type, String, SourcePos, GramFunCall)
 > postDecorateFunCall funcall = case funcall of
->   GramFunCall id@(Id p i) es -> do
->     es <- postDecorateExprs es
->     tret <- retType id
->     return (tret, i, p, GramFunCall id es)
 >   GramOverloadedFunCall ts id@(Id p i) es -> do
->     ts <- postDecorateTypes ts
->     es <- postDecorateExprs es
->     tret <- retType id
->     tfun <- getVarType id
->     case tfun of
->       TFunc _ _ -> return (tret, i, p, GramFunCall id es)
->       TScheme tsigs _ -> let annots = evalState (typeAnnotations (map convertToGramType tsigs) ts) [] in 
->         return (tret, i, p, GramOverloadedFunCall annots id es)
->   where postDecorateExprs [] = return []
->         postDecorateExprs (e:es) = do
->           e <- postDecorateExpr e
->           es <- postDecorateExprs es
->           return $ e:es
->         postDecorateTypes [] = return []
->         postDecorateTypes (t:ts) = do
->           t <- convertGramType t
->           ts <- postDecorateTypes ts
->           return $ t : ts
->         retType id = do
->           tfun <- getVarType id
->           tret <- case tfun of 
->             TScheme targs tret -> convert tret
->             TFunc targs tret   -> convert tret
->           return tret
->         typeAnnotations :: [GramType] -> [GramType] -> State [String] [GramType]
+>     ts <- mapM convertGramType ts
+>     es <- mapM postDecorateExpr es
+>     tfun <- convertFromGramType $ head ts
+>     let (targs, tret) = splitFunc tfun
+>     tret <- convert tret
+>     if length ts == 1 then return (tret, i, p, GramFunCall id es) -- see inferExpr for why this is done
+>     else do
+>       targs <- mapM convert targs
+>       let annots = evalState (typeAnnotations (map convertToGramType targs) $ tail ts) []
+>       return (tret, i, p, GramOverloadedFunCall annots id es)
+>   where typeAnnotations :: [GramType] -> [GramType] -> State [String] [GramType]
 >         typeAnnotations [] [] = return []
 >         typeAnnotations (tsig:tsigs) (targ:targs) = do
 >           annot <- typeAnnotation tsig targ
@@ -771,11 +630,11 @@ Tree post-decoration - stage 3
 >           return $ annot ++ annots
 >         typeAnnotation :: GramType -> GramType -> State [String] [GramType]
 >         typeAnnotation (GramIdType (Id _ id)) t
->           | isPrefixOf "v__" id) = do
+>           | isPrefixOf "_v" id = do
 >             ids <- get
->             if tail id `elem` ids then return []
+>             if drop 2 id `elem` ids then return []
 >             else do
->               put $ (tail id):ids
+>               put $ (drop 2 id):ids
 >               return [t]
 >           | otherwise = return []
 >         typeAnnotation (GramListType _ tsig) (GramListType _ targ) = typeAnnotation tsig targ
@@ -784,6 +643,265 @@ Tree post-decoration - stage 3
 >           annots2 <- typeAnnotation tsig2 targ2
 >           return $ annots1 ++ annots2
 >         typeAnnotation _ _ = return []
+>         splitFunc (TFunc targs tret) = (targs, tret)
+>         splitFunc (TForAll _ t) = splitFunc t
+
+
+
+===============================================================================
+ Unification algorithm U - stage 2b
+===============================================================================
+
+> unify :: SourcePos -> Monotype -> Monotype -> Environment ()
+> unify p t1 t2 = do 
+>   t1 <- convert t1
+>   t2 <- convert t2
+>   sub <- lift $ unification p t1 t2
+>   apply sub
+
+> unification :: SourcePos -> Monotype -> Monotype -> Either TypeError SubList
+> unification _ TVoid TVoid  = Right []
+> unification _ TChar TChar  = Right []
+> unification _ TInt TInt    = Right []
+> unification _ TBool TBool  = Right []
+> unification p (TVar i) t
+>   | t == (TVar i)      = Right []
+>   | occurs i t             = Left ("Recursive type detected", p)
+>   | otherwise              = Right [(i, t)]
+> unification p t (TVar i)
+>   | t == (TVar i)      = Right []
+>   | occurs i t             = Left ("Recursive type detected", p)
+>   | otherwise              = Right [(i, t)]
+> unification p (TSkolem i) t
+>   | t == TSkolem i         = Right []
+>   | otherwise              = Left ("Polymorphic type was less general than was required (subsumption check failed)", p)
+> unification p t (TSkolem i)
+>   | t == TSkolem i         = Right []
+>   | otherwise              = Left ("Polymorphic type was less general than was required (subsumption check failed)", p)
+> unification p (TList ta) (TList tb) = unification p ta tb
+> unification p (TTuple ta1 ta2) (TTuple tb1 tb2) = do
+>   sub1 <- unification p ta1 tb1
+>   sub2 <- unification p (sub1 |-> ta2) (sub1 |-> tb2)
+>   return $ sub1 ++ sub2
+> unification p (TFunc [] ta2) (TFunc [] tb2) = unification p ta2 tb2
+> unification p (TFunc (ta1:ta1s) ta2) (TFunc (tb1:tb1s) tb2) = do
+>   sub1 <- unification p ta1 tb1
+>   sub2 <- unification p (sub1 |-> (TFunc ta1s ta2)) (sub1 |-> (TFunc tb1s tb2))
+>   return $ sub1 ++ sub2
+> unification p t1 t2 = Left ("Can't unify types " ++ show t1 ++ " and " ++ show t2, p)
+
+> occurs :: VId -> Monotype -> Bool
+> occurs i (TTuple ta tb)          = (occurs i ta) || (occurs i tb)
+> occurs i (TList t)               = occurs i t
+> occurs i (TFunc [] tb)           = (occurs i tb)
+> occurs i (TFunc (ta1:ta1s) tb)   = (occurs i ta1) || (occurs i (TFunc ta1s tb))
+> occurs i (TVar j)                = i == j
+> occurs _ _ = False
+
+> (|->) :: SubList -> Type -> Type
+> (|->) sub (TTuple ta tb)      = TTuple (sub |-> ta) (sub |-> tb)
+> (|->) sub (TList t)           = TList (sub |-> t)
+> (|->) sub (TFunc tas tb)      = TFunc (map (sub |->) tas) (sub |-> tb)
+> (|->) sub (TVar i)            = case lookup i sub of Just subbed -> sub |-> subbed
+>                                                      Nothing     -> (TVar i)
+> (|->) sub (TBound i)          = case lookup i sub of Just subbed -> sub |-> subbed -- used during instantiation, skolemisation
+>                                                      Nothing     -> (TBound i)
+> (|->) sub (TForAll vids t)    = TForAll vids (sub |-> t)
+> (|->) _ t                     = t
+> infixr 3 |->
+
+
+
+===============================================================================
+ Higher-rank type inference/checking - stage 2b/c
+===============================================================================
+
+> generalise :: [Type] -> Environment () -- inferSigma
+> generalise vars = do
+>   let vids = map vid vars
+>   vartypes <- mapM convert vars
+>   tenvs <- envTypes
+>   tenvvars <- typeVars $ tenvs \\ vartypes
+>   tvars <- typeVars vartypes
+>   let internals = tvars \\ tenvvars
+>   mapM_ (generalise' internals) $ zip vids vartypes
+>   where vid (TVar i) = i
+>         generalise' blockinternals (vid,tvar) = do
+>           varinternals <- typeVars [tvar]
+>           quantify vid (varinternals `intersect` blockinternals) tvar
+
+> checkTypePoly :: GramExp -> Polytype -> Environment GramExp -- checkSigma
+> checkTypePoly e t = do
+>   t <- convert t
+>   (skolems, wpt) <- skolemise t
+>   e <- inferExpr e $ Check wpt
+>   tenvs <- envTypes
+>   tfree <- freeVars $ t:tenvs
+>   if any (`elem` tfree) $ map snd skolems then throwError ("The given expression was not polymorphic enough", getExpPos e)
+>   else return e
+
+
+
+===============================================================================
+ Polytype subsumption - stage 2b/c
+===============================================================================
+
+> subsumesPoly :: SourcePos -> Polytype -> Polytype -> Environment () -- subsCheck
+> subsumesPoly p poly1 poly2 = do -- rule DEEP-SKOL
+>   (skolemSubs, wp2) <- skolemise poly2
+>   subsumes p poly1 wp2
+>   fvids <- freeVars [poly1, poly2]
+>   if any (`elem` fvids) (map snd skolemSubs) then throwError ("Polymorphic type was less general than was required (subsumption check failed)", p)
+>   else return ()
+
+> subsumes :: SourcePos -> Polytype -> RhoType -> Environment () -- subsCheckRho
+> subsumes p poly1@(TForAll _ _) wp2 = do -- rule SPEC
+>   wp1 <- instantiate poly1
+>   subsumes p wp1 wp2
+> subsumes p t1 (TFunc targs2 tret2) = do -- rule FUN
+>   (targs1, tret1) <- assertFunc p (length targs2) t1
+>   subsumesFunc p targs1 tret1 targs2 tret2
+> subsumes p (TFunc targs1 tret1) t2 = do -- rule FUN
+>   (targs2, tret2) <- assertFunc p (length targs1) t2
+>   subsumesFunc p targs1 tret1 targs2 tret2
+> subsumes p (TList t1) (TList t2) = subsumes p t1 t2
+> subsumes p (TTuple t1a t1b) (TTuple t2a t2b) = do
+>   subsumes p t1a t2a
+>   subsumes p t1b t2b
+> subsumes p mono1 mono2 = unify p mono1 mono2 -- rule MONO
+
+> subsumesFunc :: SourcePos -> [Polytype] -> RhoType -> [Polytype] -> RhoType -> Environment () -- subsCheckFun
+> subsumesFunc p targs1 tret1 targs2 tret2 = do
+>   zipWithM_ (\targ1 targ2 -> subsumesPoly p targ2 targ1) targs1 targs2
+>   subsumes p tret1 tret2
+
+
+
+===============================================================================
+ Polytype handlers
+===============================================================================
+
+> quantify :: VId -> [VId] -> RhoType -> Environment () -- quantify
+> quantify _ [] t = return ()
+> quantify vid vids t@(TFunc _ _) = do
+>   bvars <- mapM (\_ -> freshBoundVar) vids
+>   apply (zip vids bvars)
+>   t' <- convert t
+>   replaceSub vid $ TForAll (map getvid bvars) t'
+>   where getvid (TBound i) = i
+> quantify vid vids (TList t) = quantify vid vids t
+> quantify vid vids (TTuple t1 t2) = do 
+>   internals1 <- typeVars [t1]
+>   quantify vid (internals1 `intersect` vids) t1
+>   internals2 <- typeVars [t2]
+>   quantify vid (internals2 `intersect` vids) t2
+> quantify _ _ t = return () -- monotype
+
+> instantiate :: Polytype -> Environment RhoType -- instantiate
+> instantiate (TForAll vids t) = do
+>   insts <- mapM (\_ -> fresh) vids
+>   return $ zip vids insts |-> t
+> instantiate t = return t
+
+> skolemise :: Polytype -> Environment ([(VId, VId)], RhoType) -- pr(sigma) / (deep-)skolemisation
+> skolemise (TForAll vids t) = do -- rule PRPOLY
+>   skolems1 <- mapM (\_ -> freshSkolemVar) vids
+>   (skolems2, t') <- skolemise (zip vids skolems1 |-> t)
+>   return ((zip vids $ map vid skolems1) ++ skolems2, t')
+>   where vid (TSkolem i) = i
+> skolemise (TFunc targs tres) = do -- rule PRFUN
+>   (skolems, tres) <- skolemise tres
+>   return (skolems, TFunc targs tres)
+> skolemise (TList t) = do
+>   (skolems, t) <- skolemise t
+>   return (skolems, TList t)
+> skolemise (TTuple t1 t2) = do
+>   (skolems1, t1) <- skolemise t1
+>   (skolems2, t2) <- skolemise t2 -- since foralls bind locally, t2 is not affected by t1's foralls
+>   return (skolems1 ++ skolems2, TTuple t1 t2)
+> skolemise t = return ([], t) -- rule PRMONO
+
+> assertFunc :: SourcePos -> Int -> RhoType -> Environment ([Polytype], RhoType) -- unifyFun
+> assertFunc p nargs (TFunc targs tret)
+>   | length targs == nargs = return (targs, tret)
+>   | otherwise = throwError ("Cannot unify functions with mismatching numbers of arguments", p)
+> assertFunc p nargs t = do
+>   vargs <- replicateM nargs fresh
+>   vret <- fresh
+>   addErrorDesc "Variable does not contain a function: " $ unify p t (TFunc vargs vret)
+>   return (vargs, vret)
+
+> freeVars :: [Polytype] -> Environment [VId] -- getFreeTyVars
+> freeVars ts = do
+>   ts' <- mapM convert ts
+>   return $ foldr (freeVarAccum []) [] ts'
+>   where freeVarAccum bound (TBound i) acc 
+>           | i `elem` bound = acc
+>           | i `elem` acc = acc
+>           | otherwise = i:acc
+>         freeVarAccum bound (TSkolem i) acc
+>           | i `elem` acc = acc
+>           | otherwise = i:acc
+>         freeVarAccum bound (TList t) acc          = freeVarAccum bound t acc
+>         freeVarAccum bound (TTuple t1 t2) acc     = freeVarAccum bound t1 $ freeVarAccum bound t2 acc
+>         freeVarAccum bound (TFunc targs tret) acc = foldr (freeVarAccum bound) acc (tret:targs)
+>         freeVarAccum bound (TForAll vids t) acc   = freeVarAccum (vids ++ bound) t acc
+>         freeVarAccum bound _ acc = acc
+
+> typeVars :: [Polytype] -> Environment [VId] -- getMetaTyVars
+> typeVars ts = do
+>   ts' <- mapM convert ts
+>   return $ foldr typeVarAccum [] ts'
+>   where typeVarAccum (TVar i) acc 
+>           | i `elem` acc = acc
+>           | otherwise = i:acc
+>         typeVarAccum (TList t) acc          = typeVarAccum t acc
+>         typeVarAccum (TTuple t1 t2) acc     = typeVarAccum t1 $ typeVarAccum t2 acc
+>         typeVarAccum (TFunc targs tret) acc = foldr typeVarAccum acc (tret:targs)
+>         typeVarAccum (TForAll vids t) acc   = typeVarAccum t acc
+>         typeVarAccum _ acc = acc
+
+
+
+===============================================================================
+ Expected type handlers
+===============================================================================
+
+> assertType :: SourcePos -> Polytype -> Expected RhoType -> Environment () -- instSigma
+> assertType p t (Check texp) = do
+>   t <- convert t
+>   texp <- convert texp
+>   subsumes p t texp
+> assertType p t (Infer tv) = do
+>   t <- convert t
+>   t' <- instantiate t
+>   unify p tv t'
+
+> equivalent :: SourcePos -> Expected Type -> Expected Type -> Environment ()
+> equivalent _ (Check _) _ = return ()
+> equivalent p (Infer va) (Infer vb) = do
+>   va <- convert va
+>   vb <- convert vb
+>   subsumesPoly p va vb
+>   va <- convert va
+>   vb <- convert vb
+>   subsumesPoly p vb va
+
+> propagateSubtype :: Expected Type -> Expected Type -> Environment ()
+> propagateSubtype (Check _) _ = return ()
+> propagateSubtype (Infer vsub) (Infer vexp) = do
+>   vsub <- convert vsub
+>   unify nP vexp vsub
+
+> expectedSubtype :: Expected Type -> Environment (Expected Type)
+> expectedSubtype (Check t) = return $ Check t
+> expectedSubtype (Infer _) = do
+>   v <- fresh
+>   return $ Infer v
+
+> sameDirAs :: Type -> Expected Type -> Expected Type
+> sameDirAs t (Check _) = Check t
+> sameDirAs t (Infer _) = Infer t
 
 
 
@@ -791,8 +909,8 @@ Tree post-decoration - stage 3
  State substitution functions
 ===============================================================================
 
-> apply :: SourcePos -> SubList -> Environment ()
-> apply p subs = do 
+> apply :: SubList -> Environment ()
+> apply subs = do 
 >   s <- get
 >   let (oldsubs, scopes, nextvar) = s
 >   let appliedsubs = subs ++ [(i, subs |-> t) | (i,t) <- oldsubs]
@@ -804,16 +922,16 @@ Tree post-decoration - stage 3
 >   let (subs, scopes, nextvar) = s
 >   return $ subs |-> t
 
-> resolve :: EnvType -> EnvType
-> resolve (subs, scopes, nextvar) = 
->   let newsubs = resolve' subs subs in 
->     (newsubs, scopes, nextvar)
->   where resolve' _ [] = []
->         resolve' subs ((i,TVar j):ts) =
->           case lookup j subs of
->             Just t  -> resolve' subs ((i,t):ts)
->             Nothing -> (i,TVar j) : resolve' subs ts
->         resolve' subs ((i,t):ts) = (i,t) : resolve' subs ts
+> replaceSub :: Int -> Type -> Environment ()
+> replaceSub vid vt = do
+>   s <- get
+>   let (subs, scopes, nextvar) = s
+>   let replacedsubs = replaceSub' subs vid vt
+>   put (replacedsubs, scopes, nextvar)
+>   where replaceSub' [] vid vt = [(vid,vt)]
+>         replaceSub' ((i,t):subs) vid vt
+>           | i == vid  = (i,vt) : subs
+>           | otherwise = (i,t)  : (replaceSub' subs vid vt)
 
 
 ===============================================================================
@@ -827,12 +945,12 @@ Tree post-decoration - stage 3
 >   i <- getVarId v
 >   return $ subs |-> (TVar i)
 
-> getVarId :: GramId -> Environment Int
+> getVarId :: GramId -> Environment VId
 > getVarId v = do
 >   s <- get
 >   let (_, scopes, _) = s
 >   getVarId' v scopes
->   where getVarId' :: GramId -> [Scope] -> Environment Int
+>   where getVarId' :: GramId -> [Scope] -> Environment VId
 >         getVarId' (Id p var) [] = throwError ("Variable out of scope: " ++ var, p)
 >         getVarId' vid@(Id p var) (scope:scopes) =
 >           case lookup var scope of
@@ -853,24 +971,41 @@ Tree post-decoration - stage 3
 
 > fresh = declareVar (Id nP "")
 
+> freshBoundVar :: Environment Type
+> freshBoundVar = do
+>   s <- get
+>   let (subs, scopes, nextvar) = s
+>   put (subs, scopes, nextvar+1)
+>   return $ TBound nextvar
+
+> freshSkolemVar :: Environment Type
+> freshSkolemVar = do
+>   s <- get
+>   let (subs, scopes, nextvar) = s
+>   put (subs, scopes, nextvar+1)
+>   return $ TSkolem nextvar
+
 
 ===============================================================================
  State scope handlers
 ===============================================================================
 
-> addToScope :: GramId -> Int -> Environment ()
+> addToScope :: GramId -> VId -> Environment ()
 > addToScope (Id p var) i = do
 >   s <- get
 >   let (subs, scope:scopes, nextvar) = s
+>   case lookup var $ last $ scope:scopes of
+>     Just i  -> if i < 0 then throwError ("Cannot override built-in function: " ++ var, p)
+>                else return ()
+>     Nothing -> return ()
 >   case lookup var scope of
->     Just i  -> if i >= 0 then throwError ("Variable declared twice: " ++ var, p)
->                else throwError ("Cannot override built-in function: " ++ var, p)
+>     Just i  -> throwError ("Variable declared twice: " ++ var, p)
 >     Nothing -> do
 >       let newscopes = ((var,i):scope):scopes
 >       put (subs, newscopes, nextvar)
 
-> removeFromScope :: GramId -> Environment Int
-> removeFromScope id@(Id p i) = do
+> removeFromScope :: GramId -> Environment VId
+> removeFromScope id@(Id _ i) = do
 >   vid <- getVarId id
 >   s <- get
 >   let (subs, scopes, nextvar) = s
@@ -893,108 +1028,147 @@ Tree post-decoration - stage 3
 >   put (subs, tail scopes, nextvar)
 >   return $ head scopes
 
-> cleanEnv :: EnvType -> EnvType
-> cleanEnv (subs, scopes, nextvar) =
->   let newsubs = sortBy (comparing fst) $ globalSubs subs (head scopes) in
->   (newsubs, scopes, nextvar)
->   where globalSubs _ [] = []
->         globalSubs subs ((_,i):scope) =
->           case lookup i subs of
->             Just t  -> (i,t)       : globalSubs subs scope
->             Nothing -> (i, TVar i) : globalSubs subs scope
+> envTypes :: Environment [Type]
+> envTypes = do
+>   s <- get 
+>   let (subs, scopes, nextvar) = s
+>   return $ map (\vid -> subs |-> TVar vid) $ listVarIds [] scopes
+>   where listVarIds _ [] = []
+>         listVarIds acc (scope:scopes) = 
+>           let (acc1, ids1) = listVarIds' acc scope in
+>             ids1 ++ listVarIds acc1 scopes 
+>         listVarIds' acc [] = (acc, [])
+>         listVarIds' acc ((var,vid):scope)
+>           | var `elem` acc = listVarIds' acc scope
+>           | otherwise =
+>             let (newacc, ids) = listVarIds' (var:acc) scope in
+>               (newacc, vid:ids)
 
-> counter :: Environment Int
-> counter = do
->   (_,_,i) <- get
->   return i
 
 
 ===============================================================================
  Grammar type handlers
 ===============================================================================
 
-> unifyWith :: [(String,Type)] -> Type -> GramType -> Environment (Type, [(String,Type)])
-> unifyWith insts v (GramIdType (Id p id)) = case lookup id insts of
->   Just inst -> do
->     unify p v inst
->     return (inst, insts)
->   Nothing   -> do
->     let newinsts = (id,v) : insts
->     return (v, newinsts)
-> unifyWith insts v (GramTupleType p t1 t2) = do
->   v1 <- fresh
->   v2 <- fresh
->   (v1, newinsts1) <- unifyWith insts v1 t1
->   (v2, newinsts2) <- unifyWith newinsts1 v2 t2
->   let ttup = TTuple v1 v2
->   unify p v ttup
->   return (ttup, newinsts2)
-> unifyWith insts v (GramListType p t) = do
->   vel <- fresh
->   (vel, newinsts) <- unifyWith insts vel t
->   let tlist = TList vel
->   unify p v tlist
->   return (tlist, newinsts)
-> unifyWith insts v t = do
->   t' <- convertFromGramType t
->   unify (getTypePos t) v t'
->   v <- convert v
->   return (v, insts)
-
 > convertGramType :: GramType -> Environment GramType
 > convertGramType gt = do
->   t <- convert $ convertFromGramType gt
+>   t <- convertFromGramType gt
+>   t <- convert t
 >   return $ convertToGramType t
 
 > convertFromGramType :: GramType -> Environment Type
-> convertFromGramType (GramBasicType _ BoolType) = return TBool
-> convertFromGramType (GramBasicType _ CharType) = return TChar
-> convertFromGramType (GramBasicType _ IntType)  = return TInt
-> convertFromGramType (GramTupleType _ t1 t2)    = do
+> convertFromGramType (GramBasicType _ BoolType)    = return TBool
+> convertFromGramType (GramBasicType _ CharType)    = return TChar
+> convertFromGramType (GramBasicType _ IntType)     = return TInt
+> convertFromGramType (GramTupleType _ t1 t2)       = do
 >   t1 <- convertFromGramType t1 
 >   t2 <- convertFromGramType t2
 >   return $ TTuple t1 t2
-> convertFromGramType (GramListType _ t)         = do
+> convertFromGramType (GramListType _ t)            = do
 >   t <- convertFromGramType t
 >   return $ TList t
-> convertFromGramType (GramIdType (Id _ i))
->   | isPrefixOf "t__" i =
->     case readMaybe (drop 3 i) :: Maybe Int of
->       Just vid -> return TVar vid
->       Nothing  -> fresh
->   | isPrefixOf "v__" i =
->     case readMaybe (drop 3 i) :: Maybe Int of
->       Just vid -> return TFree vid
->       Nothing  -> fresh
->   | otherwise = fresh
-> convertFromGramType (GramFunType _ targs tret) = do
+> convertFromGramType (GramIdType id)               = do
+>   readVarFromGramType id
+> convertFromGramType (GramFunType _ targs tret)    = do
 >   targs <- mapM convertFromGramType targs
 >   tret <- convertFromGramType tret
->   case any isPolymorph targs of
->     True  -> return $ TScheme targs tret
->     False -> return $ TFunc targs tret
->   where isPolymorph (TFree _) = True
->         isPolymorph (TList t) = isPolymorph t
->         isPolymorph (TTuple t1 t2) = isPolymorph t1 || isPolymorph t2
->         isPolymorph (TFunc targs tret) = any isPolymorph targs || isPolymorph tret
->         isPolymorph _ = False
+>   return $ TFunc targs tret
+> convertFromGramType (GramForAllType _ boundids t) = do
+>   tbound <- mapM readVarFromGramType boundids
+>   t <- convertFromGramType t
+>   return $ TForAll (map (\(TBound i) -> i) tbound) t
+
+> readVarFromGramType :: GramId -> Environment Type -- note this storage method is safe because the lexer prohibits identifiers starting with underscores
+> readVarFromGramType (Id _ id)
+>   | isPrefixOf "_t" id =
+>     case readMaybe (drop 2 id) :: Maybe Int of
+>       Just vid -> return $ TVar vid
+>       Nothing  -> fresh
+>   | isPrefixOf "_v" id =
+>     case readMaybe (drop 2 id) :: Maybe Int of
+>       Just vid -> return $ TBound vid
+>       Nothing  -> fresh
+>   | isPrefixOf "_void" id = return TVoid
+>   | otherwise = fresh
 
 > convertToGramType :: Type -> GramType
 > convertToGramType TBool                = GramBasicType nP BoolType
 > convertToGramType TChar                = GramBasicType nP CharType
 > convertToGramType TInt                 = GramBasicType nP IntType
+> convertToGramType TVoid                = GramIdType (Id nP ("_void")) -- needed because return type variables are unified with void - ex.: "f(x){} g(){f(0);}"
 > convertToGramType (TTuple t1 t2)       = GramTupleType nP (convertToGramType t1) (convertToGramType t2)
 > convertToGramType (TList t)            = GramListType nP (convertToGramType t)
-> convertToGramType (TVar i)             = GramIdType (Id nP ("t__" ++ (show i)))
-> convertToGramType (TFree i)            = GramIdType (Id nP ("v__" ++ (show i)))
+> convertToGramType (TVar i)             = GramIdType (Id nP ("_t" ++ (show i)))
+> convertToGramType (TBound i)           = GramIdType (Id nP ("_v" ++ (show i)))
 > convertToGramType (TFunc targs tret)   = GramFunType nP (map convertToGramType targs) (convertToGramType tret)
-> convertToGramType (TScheme targs tret) = GramFunType nP (map convertToGramType targs) (convertToGramType tret)
+> convertToGramType (TForAll tbound t)   = GramForAllType nP (map (\i -> Id nP $ "_v" ++ (show i)) tbound) (convertToGramType t)
 
-> getTypePos :: GramType -> SourcePos
-> getTypePos (GramBasicType p _) = p
-> getTypePos (GramTupleType p _ _) = p
-> getTypePos (GramListType p _) = p
-> getTypePos (GramIdType (Id p _)) = p
+> getExpPos :: GramExp -> SourcePos
+> getExpPos (GramBool p _) = p
+> getExpPos (GramChar p _) = p
+> getExpPos (GramNum p _) = p
+> getExpPos (GramEmptyList p) = p
+> getExpPos (GramExpTuple p _ _) = p
+> getExpPos (GramBinary p _ _ _) = p
+> getExpPos (GramOverloadedBinary p _ _ _ _) = p
+> getExpPos (GramUnary p _ _) = p
+> getExpPos (GramExpId (Var (Id p _) _)) = p
+> getExpPos (GramExpFunCall (GramFunCall (Id p _) _)) = p
+> getExpPos (GramExpFunCall (GramOverloadedFunCall _ (Id p _) _)) = p
+
+> unifyWith :: SourcePos -> [(String, Type)] -> Type -> GramType -> Environment ([(String, Type)], Type)
+> unifyWith p insts v (GramBasicType _ BoolType) = do
+>   unify p v TBool
+>   return (insts, TBool)
+> unifyWith p insts v (GramBasicType _ CharType) = do
+>   unify p v TChar
+>   return (insts, TChar)
+> unifyWith p insts v (GramBasicType _ IntType) = do
+>   unify p v TInt
+>   return (insts, TInt)
+> unifyWith p insts v (GramListType _ t) = do
+>   vin <- fresh
+>   (insts,t) <- unifyWith p insts vin t
+>   unify p v $ TList t
+>   return (insts, TList t)
+> unifyWith p insts v (GramTupleType _ t1 t2) = do
+>   v1 <- fresh
+>   v2 <- fresh
+>   (insts,t1) <- unifyWith p insts v1 t1
+>   (insts,t2) <- unifyWith p insts v2 t2
+>   unify p v $ TTuple t1 t2
+>   return (insts, TTuple t1 t2)
+> unifyWith p insts v (GramFunType _ [] tret) = do
+>   vret <- fresh
+>   (insts,tret) <- unifyWith p insts vret tret
+>   unify p v (TFunc [] tret)
+>   return (insts, TFunc [] tret)
+> unifyWith p insts v (GramFunType p' (targ:targs) tret) = do
+>   varg <- fresh
+>   vargs <- fresh
+>   (insts,targ)  <- unifyWith p insts varg targ
+>   (insts,tfargs) <- unifyWith p insts vargs (GramFunType p' targs tret)
+>   let TFunc targs tret = tfargs
+>   unify p v (TFunc (targ:targs) tret)
+>   return (insts, TFunc (targ:targs) tret)
+> unifyWith p insts v (GramForAllType _ bound t) = do
+>   vbound <- mapM (\_ -> freshBoundVar) bound
+>   vt <- fresh
+>   let newinsts = (map (\(Id _ i) -> i) bound) `zip` vbound ++ insts
+>   (finsts, t) <- unifyWith p newinsts vt t
+>   let forallt = TForAll (map (\(TBound i) -> i) vbound) t
+>   unify p v forallt
+>   return (finsts, forallt)
+> unifyWith p insts v (GramIdType (Id _ i)) = 
+>   case lookup i insts of
+>     Just t -> do
+>       unify p v t
+>       return (insts, t)
+>     Nothing -> do
+>       nv <- fresh
+>       unify p v nv
+>       return ((i, nv):insts, nv)
+
 
 
 ===============================================================================
@@ -1006,12 +1180,13 @@ Tree post-decoration - stage 3
 >   where wrapError _ (Right r) = Right r
 >         wrapError s (Left (msg,p)) = Left (s ++ msg, p)
 
-> replaceErrorDesc :: String -> String -> Environment t -> Environment t
-> replaceErrorDesc frm to = mapStateT (wrapError frm to)
+> replaceErrorType :: String -> String -> Environment t -> Environment t
+> replaceErrorType frm to = mapStateT (wrapError frm to)
 >   where wrapError _ _ (Right r) = Right r
 >         wrapError frm to (Left (msg,p))
->           | msg == frm = Left (to,  p)
+>           | isPrefixOf frm msg = Left (to,  p)
 >           | otherwise  = Left (msg, p)
+
 
 
 ===============================================================================
@@ -1021,8 +1196,8 @@ Tree post-decoration - stage 3
 > initEnv :: EnvType
 > initEnv = ([(-2, tprint), (-4, tempty), (-5, tchr), (-6, tord), (-7, terror)],
 >            [[("print", -2), ("isEmpty", -4), ("chr", -5), ("ord", -6), ("error", -7)]],0)
->   where tprint = TScheme [TFree (-1)] TVoid
->         tempty = TScheme [TList (TFree (-3))] TBool
+>   where tprint = TForAll [-1] $ TFunc [TBound (-1)] (TBound (-1))
+>         tempty = TForAll [-3] $ TFunc [TList $ TBound (-3)] TBool
 >         tchr = TFunc [TInt] TChar
 >         tord = TFunc [TChar] TInt
 >         terror = TFunc [TList TChar] TVoid
