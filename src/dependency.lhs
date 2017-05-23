@@ -17,7 +17,6 @@ defined before they are used (outside of their own mutually recursive block).
 
 Notes:
 Called with dependencyBlocks.
-Does not support higher-order functions.
 ===============================================================================
 ===============================================================================
 
@@ -33,13 +32,13 @@ Does not support higher-order functions.
 
 > declDeps :: GramDecl -> (GramDecl, String, [String])
 > declDeps (GramDeclVar vardecl) = (GramDeclVar vardecl, varname, deps)
->   where (varname, deps) = varDeps vardecl
+>   where (varname, deps) = varDeps [] vardecl
 > declDeps (GramDeclFun funcdecl) = (GramDeclFun funcdecl, funcname, funcDeps funcdecltail)
 >   where (GramFuncDecl (Id _ funcname) funcdecltail) = funcdecl
 
-> varDeps :: GramVarDecl -> (String, [String])
-> varDeps (GramVarDeclVar    (GramVarDeclTail (Id _ varname) e)) = (varname, exprDeps [] e)
-> varDeps (GramVarDeclType _ (GramVarDeclTail (Id _ varname) e)) = (varname, exprDeps [] e)
+> varDeps :: [String] -> GramVarDecl -> (String, [String])
+> varDeps locals (GramVarDeclVar    (GramVarDeclTail (Id _ varname) e)) = (varname, exprDeps locals e)
+> varDeps locals (GramVarDeclType _ (GramVarDeclTail (Id _ varname) e)) = (varname, exprDeps locals e)
 
 > funcDeps :: GramFuncDeclTail -> [String]
 > funcDeps (GramFuncDeclTail fargs _ stmts) = blockDeps (argList fargs) stmts
@@ -48,7 +47,7 @@ Does not support higher-order functions.
 
 > blockDeps :: [String] -> [GramStmt] -> [String]
 > blockDeps _ [] = []
-> blockDeps locals (stmt:stmts) = deps ++ (blockDeps newlocals stmts)
+> blockDeps locals (stmt:stmts) = deps ++ (blockDeps (locals ++ newlocals) stmts)
 >   where (newlocals, deps) = stmtDeps locals stmt
 
 > stmtDeps :: [String] -> GramStmt -> ([String], [String])
@@ -57,14 +56,16 @@ Does not support higher-order functions.
 > stmtDeps locals (GramAttr _ (Var (Id _ varname) _) e)
 >   | varname `elem` locals = ([], exprDeps locals e)
 >   | otherwise = ([], varname : exprDeps locals e)
-> stmtDeps locals (GramStmtFunCall (GramFunCall (Id _ varname) args)) = ([], varname : argDeps locals args) -- this part needs to be added to for HOF
+> stmtDeps locals (GramStmtFunCall (GramFunCall (Id _ varname) args))
+>   | varname `elem` locals = ([], argDeps locals args)
+>   | otherwise = ([], varname : argDeps locals args)
 >   where argDeps _ [] = []
 >         argDeps locals (e:args) = (exprDeps locals e) ++ (argDeps locals args)
 > stmtDeps locals (GramReturn _ me) = 
 >   case me of Just e  -> ([], exprDeps locals e)
 >              Nothing -> ([],[])
 > stmtDeps locals (GramFunVarDecl vardecl) = ([varname], deps)
->   where (varname, deps) = varDeps vardecl
+>   where (varname, deps) = varDeps locals vardecl
 
 > exprDeps :: [String] -> GramExp -> [String]
 > exprDeps locals (GramExpTuple _ e1 e2) = (exprDeps locals e1) ++ (exprDeps locals e2)
@@ -74,7 +75,7 @@ Does not support higher-order functions.
 >   | varname `elem` locals = []
 >   | otherwise = [varname]
 > exprDeps locals (GramExpFunCall (GramFunCall (Id _ varname) args))
->   | varname `elem` locals = argDeps locals args -- this part needs to be added to for HOF
+>   | varname `elem` locals = argDeps locals args
 >   | otherwise = varname : argDeps locals args
 >   where argDeps _ [] = []
 >         argDeps locals (e:args) = (exprDeps locals e) ++ (argDeps locals args)
