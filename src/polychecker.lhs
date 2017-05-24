@@ -182,14 +182,14 @@ Called with inferProg, returning only the decorated tree.
 >         getName (GramVarDeclVar    (GramVarDeclTail vid _)) = vid
 
 > inferFunDeclHeader :: GramFuncDecl -> Environment Type
-> inferFunDeclHeader (GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs [] stmts)) = do
+> inferFunDeclHeader (GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs [] stmts)) = do -- let func = \arg1. (...) \argn. stmts
 >   vfun <- declareVar id
 >   vargs <- mapM (\_ -> fresh) fargs
 >   vret <- fresh
 >   let tfun = TFunc vargs vret
 >   unify p vfun tfun
 >   return vfun
-> inferFunDeclHeader (GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs [GramFunTypeAnnot ftypes tret] stmts)) = do
+> inferFunDeclHeader (GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs [GramFunTypeAnnot ftypes tret] stmts)) = do -- let func = (\arg1. (...) \argn. stmts) :: t1 (...) tn -> tret
 >   vfun <- declareVar id
 >   vargs <- mapM (\_ -> fresh) fargs
 >   vret <- fresh
@@ -217,14 +217,14 @@ Called with inferProg, returning only the decorated tree.
 
 > inferVarDeclBody :: GramVarDecl -> Environment GramVarDecl
 > inferVarDeclBody vardecl = case vardecl of
->   GramVarDeclType annot vardecltail -> do
+>   GramVarDeclType annot vardecltail -> do -- let var = (exp::t)
 >     (i, p, v, e, vid) <- inferVarDeclTailPre vardecltail
 >     (_,poly) <- unifyWith p [] v annot
 >     e <- addErrorDesc ("Variable type annotation does not match given expression (" ++ i ++ "): ") $ replErr i $ checkTypePoly e poly
 >     generalise [v]
 >     inferVarDeclTailPost vardecltail v vid
 >     return $ GramVarDeclType annot $ GramVarDeclTail (Id p i) e
->   GramVarDeclVar vardecltail    -> do
+>   GramVarDeclVar vardecltail    -> do -- let var = exp
 >     (i, p, v, e, vid) <- inferVarDeclTailPre vardecltail
 >     e <- addErrorDesc ("Variable declaration failed (" ++ i ++ "): ") $ replErr i $ inferExpr e $ Infer v
 >     generalise [v]
@@ -297,10 +297,23 @@ Called with inferProg, returning only the decorated tree.
  Function type inference/checking - stage 2b
 ===============================================================================
 
+Statements, unlike expressions, do not always have a return value.
+Thus, we cannot use regular type judgments on their return types to determine
+a block's return type. Furthermore, we need to make sure that functions always
+return something (or void), and so we need to establish whether all branches
+return, and finally that they also return values of the same type.
+To do all of these, we keep track of whether blocks never, sometimes
+or always return, and assert that all values returned must be 
+of equivalent type. For monotypes, this is regular unification, but
+(higher-order) polymorphic function signatures that are not identical 
+may be equivalent. We thus assert that neither polymorphic return type
+can be more polymorphic than the other, with respect to deep skolemisation.
+A description of (mutual) deep skolemisation can be found in [1].
+
 > inferStmtBlock :: SourcePos -> [GramStmt] -> Expected Polytype -> Environment (Returns, [GramStmt])
 > inferStmtBlock p [] texp = do
 >   return (DoesNotReturn, [])
-> inferStmtBlock _ (stmt:stmts) texp = do
+> inferStmtBlock _ (stmt:stmts) texp = do 
 >   (p, tret, stmt) <- inferStmt stmt texp
 >   case tret of 
 >     DoesNotReturn    -> do
@@ -315,14 +328,14 @@ Called with inferProg, returning only the decorated tree.
 >       case tret of
 >         DoesNotReturn -> return (SometimesReturns, stmt:stmts)
 >         AlwaysReturns -> do
->           addErrorDesc "Inconsistent return types: " $ equivalent p texp texp2
+>           addErrorDesc "Inconsistent return types: " $ equivalent p texp texp2 
 >           return (AlwaysReturns, stmt:stmts)
 >         SometimesReturns -> do
->           addErrorDesc "Inconsistent return types: " $ equivalent p texp texp2
+>           addErrorDesc "Inconsistent return types: " $ equivalent p texp texp2 
 >           return (SometimesReturns, stmt:stmts)
 
 > inferStmt :: GramStmt -> Expected RhoType -> Environment (SourcePos, Returns, GramStmt)
-> inferStmt (GramIf p cond tr fa) texp = do
+> inferStmt (GramIf p cond tr fa) texp = do -- if statement as described in sec. 7.1 [1]
 >   cond <- addErrorDesc "Non-boolean expression used as branch condition: " $ inferExpr cond $ Check TBool
 >   exptr <- expectedSubtype texp
 >   expfa <- expectedSubtype texp
@@ -342,11 +355,11 @@ Called with inferProg, returning only the decorated tree.
 >       propagateSubtype exptr texp
 >       return (p, SometimesReturns, stmt)
 >     else do
->       addErrorDesc "Inconsistent return types: " $ equivalent p exptr expfa
+>       addErrorDesc "Inconsistent return types: " $ equivalent p exptr expfa 
 >       propagateSubtype exptr texp
 >       if (ret1 == AlwaysReturns && ret2 == AlwaysReturns) then return (p, AlwaysReturns, stmt)
 >       else return (p, SometimesReturns, stmt)
-> inferStmt (GramWhile p cond lp) texp = do
+> inferStmt (GramWhile p cond lp) texp = do -- typed equivalently to if(cond) { lp } else { }
 >   cond <- addErrorDesc "Non-boolean expression used as loop condition: " $ inferExpr cond $ Check TBool
 >   explp <- expectedSubtype texp
 >   pushScope
@@ -357,7 +370,7 @@ Called with inferProg, returning only the decorated tree.
 >   else do
 >     propagateSubtype explp texp
 >     return (p, SometimesReturns, stmt)
-> inferStmt (GramReturn p ret) texp =
+> inferStmt (GramReturn p ret) texp = -- regular typing judgment
 >   case ret of
 >     Nothing -> do
 >       assertType p TVoid texp
@@ -365,14 +378,14 @@ Called with inferProg, returning only the decorated tree.
 >     Just e  -> do
 >       e <- inferExpr e texp
 >       return $ (p, AlwaysReturns, GramReturn p $ Just e)
-> inferStmt (GramFunVarDecl vardecl) texp = do
+> inferStmt (GramFunVarDecl vardecl) texp = do -- let var = exp, same as global variable declaration
 >   inferVarDeclHeader vardecl
 >   vardecl <- inferVarDeclBody vardecl
 >   vardecl <- inferVarDeclPost vardecl
 >   return (getPos vardecl, DoesNotReturn, GramFunVarDecl vardecl)
 >   where getPos (GramVarDeclType _ (GramVarDeclTail (Id p i) _)) = p
 >         getPos (GramVarDeclVar    (GramVarDeclTail (Id p i) _)) = p
-> inferStmt (GramAttr p (Var id@(Id pos i) fields) e) texp = do
+> inferStmt (GramAttr p (Var id@(Id pos i) fields) e) texp = do -- let var = (exp::t) (global typed variable declaration), but with fields
 >   vid <- getVarId id
 >   t <- getVarType id
 >   if vid < 0 then throwError ("Cannot override built-in function " ++ i, pos)
@@ -381,7 +394,7 @@ Called with inferProg, returning only the decorated tree.
 >     checkTypePoly e tfield
 >     generalise [tfield]
 >     return (p, DoesNotReturn, GramAttr p (Var id fields) e)
-> inferStmt (GramStmtFunCall funcall) texp = do
+> inferStmt (GramStmtFunCall funcall) texp = do -- return value is irrelevant, just type-check argument types
 >   v <- fresh
 >   (p,_,_,funcall) <- inferFunCall funcall $ Infer v
 >   return (p, DoesNotReturn, GramStmtFunCall funcall)
@@ -404,29 +417,29 @@ Called with inferProg, returning only the decorated tree.
 >   v <- fresh
 >   assertType p (TList v) t
 >   return orig
-> inferExpr (GramExpTuple p e1 e2) t = do
+> inferExpr (GramExpTuple p e1 e2) t = do -- just propagate the type-check/inference through the tuple
 >   v1 <- fresh
 >   v2 <- fresh
 >   assertType p (TTuple v1 v2) t
 >   v1 <- convert v1
->   e1 <- inferExpr e1 $ v1 `sameDirAs` t 
+>   e1 <- inferExpr e1 $ v1 `sameDirAs` t
 >   v2 <- convert v2
 >   e2 <- inferExpr e2 $ v2 `sameDirAs` t
 >   return $ GramExpTuple p e1 e2
+>   where sameDirAs v (Check _) = Check v
+>         sameDirAs v (Infer _) = Infer v
 > inferExpr (GramOverloadedBinary p _ op e1 e2) t = inferExpr (GramBinary p op e1 e2) t
-> inferExpr (GramBinary p op e1 e2) t = do
+> inferExpr (GramBinary p op e1 e2) t = do -- operators are seen as functions in the typing system
 >   (t1, t2, tret, ol) <- opType op
->   e1 <- inferExpr e1 $ overloadDir ol $ t1
->   t2 <- convert t2
->   e2 <- inferExpr e2 $ Check t2 
+>   e1 <- inferExpr e1 $ Check t1 -- for overloaded operations: type-checking w.r.t. a TVar
+>   t2 <- convert t2              -- reduces to regular unification, which is what we want,
+>   e2 <- inferExpr e2 $ Check t2 -- rather than Infer which instantiates the inferred type
 >   tret <- convert tret
 >   assertType p tret t
 >   t1 <- convert t1
 >   if ol then return $ GramOverloadedBinary p (convertToGramType t1) op e1 e2
 >   else return $ GramBinary p op e1 e2
->   where overloadDir False = Check
->         overloadDir True  = Infer
-> inferExpr (GramUnary p op e) t = do
+> inferExpr (GramUnary p op e) t = do -- operators are seen as functions in the typing system
 >   (tel, _, tret, _) <- opType op
 >   e <- inferExpr e $ Check tel
 >   assertType p tret t
@@ -443,7 +456,7 @@ Called with inferProg, returning only the decorated tree.
 
 > inferFunCall :: GramFunCall -> Expected RhoType -> Environment (SourcePos, String, Type, GramFunCall)
 > inferFunCall (GramOverloadedFunCall _ id args) texp = inferFunCall (GramFunCall id args) texp
-> inferFunCall orig@(GramFunCall id@(Id p i) args) texp = do
+> inferFunCall orig@(GramFunCall id@(Id p i) args) texp = do -- rule APP
 >   tpolyfun <- getVarType id
 >   tfun <- instantiate tpolyfun
 >   (argtypes, tret) <- assertFunc p (length args) tfun
@@ -454,9 +467,9 @@ Called with inferProg, returning only the decorated tree.
 >   funid <- getVarId id
 >   let vfun = convertToGramType $ TVar funid
 >   if isPolymorph tpolyfun then return (p, i, tret, GramOverloadedFunCall (vfun:argtypes) id args)
->   else return (p, i, tret, GramOverloadedFunCall [vfun] id args) -- this is a very ugly hack. however, for HOF the function name is removed from the scope
->   where inferArgs _ [] [] = return ([],[]) --                       after function exit, and post-decoration requires the function variable ID to retrieve the
->         inferArgs (Id _ i) (e:es) (targ:targs) = do --              function type, so that polymorphic function calls can be annotated. thus, we include the variable ID here.
+>   else return (p, i, tret, GramOverloadedFunCall [vfun] id args) -- overloading with [vfun] is a hack. however, for HOF the function name is removed from the scope after 
+>   where inferArgs _ [] [] = return ([],[])                       -- function exit, and post-decoration requires the function variable ID to retrieve the function type,
+>         inferArgs (Id _ i) (e:es) (targ:targs) = do              -- so that polymorphic function calls can be annotated. Thus, we include the variable ID here.
 >           e <- addErrorDesc ("Argument to function " ++ i ++ " has wrong type: ") $ checkTypePoly e targ
 >           (es,targs) <- inferArgs id es targs
 >           targ <- convert targ
@@ -686,7 +699,7 @@ Called with inferProg, returning only the decorated tree.
 > unification p t1 t2 = Left ("Can't unify types " ++ show t1 ++ " and " ++ show t2, p)
 
 > occurs :: VId -> Monotype -> Bool
-> occurs i (TTuple ta tb)          = (occurs i ta) || (occurs i tb)
+> occurs i (TTuple ta tb)          = (occurs i ta) || (occurs i tb) -- implements occurs check
 > occurs i (TList t)               = occurs i t
 > occurs i (TFunc [] tb)           = (occurs i tb)
 > occurs i (TFunc (ta1:ta1s) tb)   = (occurs i ta1) || (occurs i (TFunc ta1s tb))
@@ -711,8 +724,8 @@ Called with inferProg, returning only the decorated tree.
  Higher-rank type inference/checking - stage 2b/c
 ===============================================================================
 
-> generalise :: [Type] -> Environment () -- inferSigma
-> generalise vars = do
+> generalise :: [Type] -> Environment () -- env |-poly_up t : sigma
+> generalise vars = do -- rule GEN1
 >   let vids = map vid vars
 >   vartypes <- mapM convert vars
 >   tenvs <- envTypes
@@ -725,8 +738,8 @@ Called with inferProg, returning only the decorated tree.
 >           varinternals <- typeVars [tvar]
 >           quantify vid (varinternals `intersect` blockinternals) tvar
 
-> checkTypePoly :: GramExp -> Polytype -> Environment GramExp -- checkSigma
-> checkTypePoly e t = do
+> checkTypePoly :: GramExp -> Polytype -> Environment GramExp -- env |-poly_down t : sigma
+> checkTypePoly e t = do -- rule GEN2
 >   t <- convert t
 >   (skolems, wpt) <- skolemise t
 >   e <- inferExpr e $ Check wpt
@@ -741,7 +754,7 @@ Called with inferProg, returning only the decorated tree.
  Polytype subsumption - stage 2b/c
 ===============================================================================
 
-> subsumesPoly :: SourcePos -> Polytype -> Polytype -> Environment () -- subsCheck
+> subsumesPoly :: SourcePos -> Polytype -> Polytype -> Environment () -- |-dsk sigma <= sigma'
 > subsumesPoly p poly1 poly2 = do -- rule DEEP-SKOL
 >   (skolemSubs, wp2) <- skolemise poly2
 >   subsumes p poly1 wp2
@@ -749,7 +762,7 @@ Called with inferProg, returning only the decorated tree.
 >   if any (`elem` fvids) (map snd skolemSubs) then throwError ("Polymorphic type was less general than was required (subsumption check failed)", p)
 >   else return ()
 
-> subsumes :: SourcePos -> Polytype -> RhoType -> Environment () -- subsCheckRho
+> subsumes :: SourcePos -> Polytype -> RhoType -> Environment () -- |-dsk* sigma <= rho
 > subsumes p poly1@(TForAll _ _) wp2 = do -- rule SPEC
 >   wp1 <- instantiate poly1
 >   subsumes p wp1 wp2
@@ -759,14 +772,14 @@ Called with inferProg, returning only the decorated tree.
 > subsumes p (TFunc targs1 tret1) t2 = do -- rule FUN
 >   (targs2, tret2) <- assertFunc p (length targs1) t2
 >   subsumesFunc p targs1 tret1 targs2 tret2
-> subsumes p (TList t1) (TList t2) = subsumes p t1 t2
-> subsumes p (TTuple t1a t1b) (TTuple t2a t2b) = do
+> subsumes p (TList t1) (TList t2) = subsumes p t1 t2 -- propagate
+> subsumes p (TTuple t1a t1b) (TTuple t2a t2b) = do -- propagate
 >   subsumes p t1a t2a
 >   subsumes p t1b t2b
 > subsumes p mono1 mono2 = unify p mono1 mono2 -- rule MONO
 
-> subsumesFunc :: SourcePos -> [Polytype] -> RhoType -> [Polytype] -> RhoType -> Environment () -- subsCheckFun
-> subsumesFunc p targs1 tret1 targs2 tret2 = do
+> subsumesFunc :: SourcePos -> [Polytype] -> RhoType -> [Polytype] -> RhoType -> Environment () -- |-dsk* ({sigma1} -> sigma2) <= ({sigma3} -> rho4)
+> subsumesFunc p targs1 tret1 targs2 tret2 = do -- rule FUN
 >   zipWithM_ (\targ1 targ2 -> subsumesPoly p targ2 targ1) targs1 targs2
 >   subsumes p tret1 tret2
 
@@ -776,7 +789,7 @@ Called with inferProg, returning only the decorated tree.
  Polytype handlers
 ===============================================================================
 
-> quantify :: VId -> [VId] -> RhoType -> Environment () -- quantify
+> quantify :: VId -> [VId] -> RhoType -> Environment ()
 > quantify _ [] t = return ()
 > quantify vid vids t@(TFunc _ _) = do
 >   bvars <- mapM (\_ -> freshBoundVar) vids
@@ -792,13 +805,13 @@ Called with inferProg, returning only the decorated tree.
 >   quantify vid (internals2 `intersect` vids) t2
 > quantify _ _ t = return () -- monotype
 
-> instantiate :: Polytype -> Environment RhoType -- instantiate
+> instantiate :: Polytype -> Environment RhoType
 > instantiate (TForAll vids t) = do
 >   insts <- mapM (\_ -> fresh) vids
 >   return $ zip vids insts |-> t
 > instantiate t = return t
 
-> skolemise :: Polytype -> Environment ([(VId, VId)], RhoType) -- pr(sigma) / (deep-)skolemisation
+> skolemise :: Polytype -> Environment ([(VId, VId)], RhoType) -- pr(sigma)
 > skolemise (TForAll vids t) = do -- rule PRPOLY
 >   skolems1 <- mapM (\_ -> freshSkolemVar) vids
 >   (skolems2, t') <- skolemise (zip vids skolems1 |-> t)
@@ -807,16 +820,16 @@ Called with inferProg, returning only the decorated tree.
 > skolemise (TFunc targs tres) = do -- rule PRFUN
 >   (skolems, tres) <- skolemise tres
 >   return (skolems, TFunc targs tres)
-> skolemise (TList t) = do
+> skolemise (TList t) = do -- propagate
 >   (skolems, t) <- skolemise t
 >   return (skolems, TList t)
-> skolemise (TTuple t1 t2) = do
+> skolemise (TTuple t1 t2) = do -- propagate
 >   (skolems1, t1) <- skolemise t1
 >   (skolems2, t2) <- skolemise t2 -- since foralls bind locally, t2 is not affected by t1's foralls
 >   return (skolems1 ++ skolems2, TTuple t1 t2)
 > skolemise t = return ([], t) -- rule PRMONO
 
-> assertFunc :: SourcePos -> Int -> RhoType -> Environment ([Polytype], RhoType) -- unifyFun
+> assertFunc :: SourcePos -> Int -> RhoType -> Environment ([Polytype], RhoType)
 > assertFunc p nargs (TFunc targs tret)
 >   | length targs == nargs = return (targs, tret)
 >   | otherwise = throwError ("Cannot unify functions with mismatching numbers of arguments", p)
@@ -826,7 +839,7 @@ Called with inferProg, returning only the decorated tree.
 >   addErrorDesc "Variable does not contain a function: " $ unify p t (TFunc vargs vret)
 >   return (vargs, vret)
 
-> freeVars :: [Polytype] -> Environment [VId] -- getFreeTyVars
+> freeVars :: [Polytype] -> Environment [VId] -- ftv for skolemised sigma
 > freeVars ts = do
 >   ts' <- mapM convert ts
 >   return $ foldr (freeVarAccum []) [] ts'
@@ -843,7 +856,7 @@ Called with inferProg, returning only the decorated tree.
 >         freeVarAccum bound (TForAll vids t) acc   = freeVarAccum (vids ++ bound) t acc
 >         freeVarAccum bound _ acc = acc
 
-> typeVars :: [Polytype] -> Environment [VId] -- getMetaTyVars
+> typeVars :: [Polytype] -> Environment [VId] -- ftv
 > typeVars ts = do
 >   ts' <- mapM convert ts
 >   return $ foldr typeVarAccum [] ts'
@@ -862,7 +875,7 @@ Called with inferProg, returning only the decorated tree.
  Expected type handlers
 ===============================================================================
 
-> assertType :: SourcePos -> Polytype -> Expected RhoType -> Environment () -- instSigma
+> assertType :: SourcePos -> Polytype -> Expected RhoType -> Environment () -- |-inst sigma <= rho
 > assertType p t (Check texp) = do
 >   t <- convert t
 >   texp <- convert texp
@@ -893,10 +906,6 @@ Called with inferProg, returning only the decorated tree.
 > expectedSubtype (Infer _) = do
 >   v <- fresh
 >   return $ Infer v
-
-> sameDirAs :: Type -> Expected Type -> Expected Type
-> sameDirAs t (Check _) = Check t
-> sameDirAs t (Infer _) = Infer t
 
 
 
