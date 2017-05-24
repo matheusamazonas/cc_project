@@ -105,17 +105,16 @@ Called with inferProg, returning only the decorated tree.
 >   case runStateT (addErrorDesc "[TYPE ERROR] " $ inference declBlocks) initEnv of
 >     Left e             -> Left e
 >     Right (annot, env) -> Right annot
-
-> inference :: [[GramDecl]] -> Environment [GramDecl]
-> inference declBlocks = do
->   decls <- inferDeclBlocks declBlocks
->   postDecorate decls
-> inferDeclBlocks :: [[GramDecl]] -> Environment [GramDecl]
-> inferDeclBlocks [] = return []
-> inferDeclBlocks (block:blocks) = do
->   newblock <- inferDeclBlock block
->   blocklist <- inferDeclBlocks blocks
->   return $ newblock ++ blocklist
+>   where inference :: [[GramDecl]] -> Environment [GramDecl]
+>         inference declBlocks = do
+>           decls <- inferDeclBlocks declBlocks
+>           postDecorate decls
+>         inferDeclBlocks :: [[GramDecl]] -> Environment [GramDecl]
+>         inferDeclBlocks [] = return []
+>         inferDeclBlocks (block:blocks) = do
+>           newblock <- inferDeclBlock block
+>           blocklist <- inferDeclBlocks blocks
+>           return $ newblock ++ blocklist
 
 > inferDeclBlock :: [GramDecl] -> Environment [GramDecl]
 > inferDeclBlock ds = do
