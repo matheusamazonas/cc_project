@@ -91,12 +91,7 @@ Called with inferProg, returning only the decorated tree.
  Known issues / improvements
 ===============================================================================
 
-Polytype attributions don't seem to work properly yet:
-"id(x) { return x; } addOne(x) { return x+1; } f() { var g = id; g = addOne; return g; } var x = f(); var y = x(True);"
-shows f() is inferred to have type forall a. -> (a -> a) and thus apply to True,
-because g is inferred to have type forall a. a -> a (the type of id).
-The attribution of addOne :: Int -> Int to g should not be allowed as it is not
-general enough to match g, but the attribution seems to have no effect.
+-
 
 
 
@@ -382,8 +377,7 @@ general enough to match g, but the attribution seems to have no effect.
 >   t <- getVarType id
 >   if vid < 0 then throwError ("Cannot override built-in function " ++ i, pos)
 >   else do
->     tfield <- fresh
->     inferField fields p t $ Infer tfield
+>     tfield <- traverseFields fields p t
 >     checkTypePoly e tfield
 >     generalise [tfield]
 >     return (p, DoesNotReturn, GramAttr p (Var id fields) e)
@@ -439,7 +433,8 @@ general enough to match g, but the attribution seems to have no effect.
 >   return $ GramUnary p op e
 > inferExpr orig@(GramExpId (Var vid@(Id p i) fields)) t = do
 >   vart <- getVarType vid
->   inferField fields p vart t
+>   vart <- traverseFields fields p vart
+>   assertType p vart t
 >   return orig
 > inferExpr (GramExpFunCall funcall) t = do
 >   (p,i,tret,funcall) <- inferFunCall funcall t
@@ -470,30 +465,30 @@ general enough to match g, but the attribution seems to have no effect.
 >         isPolymorph (TForAll _ _) = True
 >         isPolymorph _ = False
 
-> inferField :: [GramField] -> SourcePos -> Type -> Expected Type -> Environment ()
-> inferField [] p vart tret = assertType p vart tret
-> inferField [First p fields] _ vart tret = do
+> traverseFields :: [GramField] -> SourcePos -> Type -> Environment Type
+> traverseFields [] _ vart = return vart
+> traverseFields [First p fields] _ vart = do
 >   v1 <- fresh
 >   v2 <- fresh
 >   addErrorDesc "fst applied to non-tuple variable: " $ unify p (TTuple v1 v2) vart
 >   v1 <- convert v1
->   inferField fields p v1 tret 
-> inferField [Second p fields] _ vart tret = do
+>   traverseFields fields p v1 
+> traverseFields [Second p fields] _ vart = do
 >   v1 <- fresh
 >   v2 <- fresh
 >   addErrorDesc "snd applied to non-tuple variable: " $ unify p (TTuple v1 v2) vart
 >   v2 <- convert v2
->   inferField fields p v2 tret
-> inferField [Head p fields] _ vart tret = do
+>   traverseFields fields p v2
+> traverseFields [Head p fields] _ vart = do
 >   v <- fresh
 >   addErrorDesc "hd applied to non-list variable: " $ unify p (TList v) vart
 >   v <- convert v
->   inferField fields p v tret
-> inferField [Tail p fields] _ vart tret = do
+>   traverseFields fields p v
+> traverseFields [Tail p fields] _ vart = do
 >   v <- fresh
 >   addErrorDesc "tl applied to non-list variable: " $ unify p (TList v) vart
 >   v <- convert v
->   inferField fields p (TList v) tret
+>   traverseFields fields p (TList v)
 
 > opType :: Operation -> Environment (Type, Type, Type, Bool)
 > opType op
