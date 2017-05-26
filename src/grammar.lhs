@@ -13,11 +13,7 @@
 >   deriving (Show, Eq)
 
 > data GramFunTypeAnnot = 
->      GramFunTypeAnnot [GramFTypes] GramRetType
->   deriving (Show, Eq)
-
-> data GramFTypes =
->      GramFTypes GramType [GramFTypes]
+>      GramFunTypeAnnot [GramType] GramRetType
 >   deriving (Show, Eq)
 
 > data GramRetType =

@@ -150,23 +150,10 @@ Grammar: FunType = [ FTypes ] '->' RetType
 
 > pFunType :: MyParser GramFunTypeAnnot
 > pFunType = do
->   opt <- optionMaybe pFTypes
+>   fType <- many pType
 >   void $ isToken TokenFuncType 
 >   retType <- pRetType
->   let fType = maybeToList opt in
->     return $ GramFunTypeAnnot fType retType
-
-Parser for function type list.
-Example: Int Int Char Bool
-Grammar: FTypes = Type [ FTypes ]
-
-> pFTypes :: MyParser GramFTypes
-> pFTypes = do
->   t <- pType 
->   opt <- optionMaybe pFTypes
->   let fTypes = maybeToList opt in
->     return $ GramFTypes t fTypes
-
+>   return $ GramFunTypeAnnot fType retType
 
 Parser for arguments list. Used on function calls (Expr8)
 Grammar: ArgList = '(' [ ActArgs ] ')'

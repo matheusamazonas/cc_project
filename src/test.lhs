@@ -19,7 +19,6 @@ This parser is here because it's used just for test purposes
 > parseId       = parse (pId <* eof) "test"
 > parseRetType  = parse (pRetType <* eof) "test"
 > parseFunType  = parse (pFunType <* eof) "test"
-> parseFTypes   = parse (pFTypes <* eof) "test"
 > parseExpr8    = parse (pExpr8 <* eof) "test"
 > parseExpr7    = parse (pExpr7 <* eof) "test"
 > parseExpr6    = parse (pExpr6 <* eof) "test"
@@ -46,8 +45,6 @@ This parser is here because it's used just for test purposes
 >   void $ testRetTypes
 >   putStrLn "------ FunType ------"
 >   void $ testFunTypes
->   putStrLn "------ FTypes ------"
->   void $ testFType
 >   putStrLn "------ Expr8 ------"
 >   void $ testExpr8
 >   putStrLn "------ Expr7 ------"
@@ -86,15 +83,10 @@ This parser is here because it's used just for test purposes
 
 == FunType
 
-> funTypeProgs = ["Int -> Void", "(Int, Int) -> Char", "-> Int", "Char -> Void", "[Int] -> (Bool, Char)", "-> [Bool]", "-> (Char, Int)"]
+> funTypeProgs = ["Int -> Void", "(Int, Int) -> Char", "-> Int", "Char -> Void", "[Int] -> (Bool, Char)", "-> [Bool]", "-> (Char, Int)", "Int Char Int -> Int"]
 > funTypeCases = map (lexer nP) funTypeProgs
 > testFunTypes = putStrLn $ unlines $ map (show . parseFunType) funTypeCases
 
-== FTypes
-
-> fTypeProgs = ["Bool Int", "Char", "Int Char myId Bool", "Int Int Int", "Int Int Bool", "myType"]
-> fTypeCases = map (lexer nP) fTypeProgs
-> testFType = putStrLn $ unlines $ map (show . parseFTypes) fTypeCases
 
 == Expr8
 
