@@ -12,6 +12,7 @@ Type = BasicType
 	| ’(’ Type ’,’ Type ’)’ 
 	| ’[’ Type ’]’
 	| id
+	| '(' ['forall' id+ '.'] FunType ')'
 BasicType = 'Int' | 'Bool' | 'Char'
 FArgs = id [ ',' FArgs ]
 Stmt = 'if' '(' Exp ')' '{' Stmt* '}' [ 'else' '{' Stmt* '}' ]
@@ -35,6 +36,8 @@ ActArgs = Exp [ ',' ActArgs ]
 Field = [ '.' ('hd' | 'tl' | 'fst' | 'snd') Field ]
 int = [ '-' ] digit+
 id = alpha ( '_' | alphaNum )* 
+
+
 
 
 

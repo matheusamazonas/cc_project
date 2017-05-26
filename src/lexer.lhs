@@ -75,6 +75,7 @@ column to 1 as well.
 >   | s == "while"   = (TokenWhile, p)
 >   | s == "var"     = (TokenVar, p)
 >   | s == "return"  = (TokenReturn, p)
+>   | s == "forall"  = (TokenForAll, p)
 >   | otherwise      = (TokenId s, p)
 
 > lexNum :: SourcePos -> String -> [PosToken]

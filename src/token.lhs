@@ -53,5 +53,6 @@
 >    | TokenComma
 >    | TokenEOL
 >    | TokenChar Char
+>    | TokenForAll
 >   deriving (Show, Eq)
 
