@@ -70,19 +70,16 @@
 
 > printFunType :: Int -> GramFunTypeAnnot -> String
 > printFunType i (GramFunTypeAnnot ts r) = 
-> 	        tb i ++ printMany printFTypes 0 ts ++ "-> " 
+> 	        tb i ++ concat (map (printType 0 True) ts) ++ "-> " 
 >           ++ printRetType 0 r 
-
-> printFTypes :: Int -> GramFTypes -> String
-> printFTypes i (GramFTypes t ts) = tb i ++ printType i False t ++ " " ++ printMany printFTypes 0 ts
 
 > printType :: Int -> Bool -> GramType -> String
 > printType i _ (GramBasicType _ t) = printBasicType i t
 > printType i _ (GramTupleType _ t1 t2) = tb i ++ "(" ++ printType 0 True t1 ++ ", " ++ printType 0 True t2 ++ ")"
 > printType i _ (GramListType _ t) = tb i ++ "[" ++ printType 0 True t ++ "]"
 > printType i _ (GramIdType (Id _ s)) = tb i ++ s
-> printType i False (GramFunType _ targs tret) = tb i ++ "(" ++ printMany (\_ t -> printType 0 False t ++ " ") 0 targs ++ "-> " ++ printType 0 False tret ++ ")"
-> printType i True (GramFunType _ targs tret) = tb i ++ printMany (\_ t -> printType 0 False t ++ " ") 0 targs ++ "-> " ++ printType 0 False tret
+> printType i False (GramFunType _ (GramFunTypeAnnot targs tret)) = tb i ++ "(" ++ printMany (\_ t -> printType 0 False t ++ " ") 0 targs ++ "-> " ++ printRetType 0 tret ++ ")"
+> printType i True (GramFunType _ (GramFunTypeAnnot targs tret)) = tb i ++ printMany (\_ t -> printType 0 False t ++ " ") 0 targs ++ "-> " ++ printRetType 0 tret
 > printType i False (GramForAllType _ boundids t) = tb i ++ "(forall " ++ printMany (\_ (Id _ id) -> id ++ " ") 0 boundids ++ ". " ++ printType 0 True t ++ ")"
 > printType i True (GramForAllType _ boundids t) = tb i ++ "forall " ++ printMany (\_ (Id _ id) -> id ++ " ") 0 boundids ++ ". " ++ printType 0 True t
 

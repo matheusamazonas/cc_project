@@ -90,9 +90,7 @@ Once implemented, generate = run generateProgram
 >   case getFuncReturnType types of
 >     (GramVoidType _) -> if funId == "main" then write "halt" else write "unlink\nret"
 >     otherwise -> do return ()
->   where getArgTypes [GramFunTypeAnnot ftypes _] = getArgTypes' ftypes
->         getArgTypes' [] = []
->         getArgTypes' [GramFTypes t ftypes] = t : getArgTypes' ftypes
+>   where getArgTypes [GramFunTypeAnnot ftypes _] = ftypes
 
 > genVarDecl :: GramVarDecl -> Environment ()
 > genVarDecl (GramVarDeclType varType (GramVarDeclTail (Id _ varId) expr)) = do
@@ -309,7 +307,7 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >           let storeIns = "bra __exc_unknown_error"
 >           put ((d,(fid, (loadIns, storeIns)):v):ss, nxt)
 >         freeTypeVars (GramIdType (Id _ id)) 
->           | isPrefixOf "_v" id) = [drop 2 id]
+>           | isPrefixOf "_v" id = [drop 2 id]
 >           | otherwise = []
 >         freeTypeVars (GramListType _ t) = freeTypeVars t
 >         freeTypeVars (GramTupleType _ t1 t2) = freeTypeVars t1 ++ freeTypeVars t2
