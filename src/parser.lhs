@@ -84,7 +84,7 @@ need to cosntruct a GramIdType by mapping the constructor
 on the GramId
 
 > pType :: MyParser GramType
-> pType = pBasicType <|> pTupleType <|> pListType <|> ((GramIdType) <$> pId)
+> pType = pBasicType <|> (try pTupleType) <|> pFunType <|> pListType <|> ((GramIdType) <$> pId)
 
 Parses a basic type. Remember that the isToken function
 uses the matchToken and that the value we send to it 
@@ -148,12 +148,29 @@ Programming-style functions (->). Example:
         Int Int Char Bool -> Int
 Grammar: FunType = [ FTypes ] '->' RetType
 
-> pFunType :: MyParser GramFunTypeAnnot
-> pFunType = do
+> pFunTypeAnnot :: MyParser GramFunTypeAnnot
+> pFunTypeAnnot = do
 >   fType <- many pType
 >   void $ isToken TokenFuncType 
 >   retType <- pRetType
 >   return $ GramFunTypeAnnot fType retType
+
+> pFunType :: MyParser GramType
+> pFunType = do
+>   (_, p) <- isToken TokenOpenP
+>   optForAll <- optionMaybe $ pForAll
+>   funType <- pFunTypeAnnot
+>   void $ isToken TokenCloseP
+>   case optForAll of
+>     Nothing -> return $ GramFunType p funType
+>     Just i -> return $ GramForAllType p i $ GramFunType p funType      
+>   where
+>     pForAll = do
+>       void $ isToken TokenForAll
+>       ids <- many1 $ pId
+>       void $ isToken TokenPeriod
+>       return ids
+
 
 Parser for arguments list. Used on function calls (Expr8)
 Grammar: ArgList = '(' [ ActArgs ] ')'
@@ -546,7 +563,7 @@ the corrent GramDecl with it.
 >   where
 >     pOptType = do
 >       void $ isToken TokenFuncDecl
->       t <- pFunType
+>       t <- pFunTypeAnnot
 >       return t
 
 This is the root parser and is the one that should be used to parse a 

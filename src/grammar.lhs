@@ -26,7 +26,7 @@
 >    | GramIdType GramId
 >    | GramTupleType SourcePos GramType GramType 
 >    | GramListType SourcePos GramType 
->    | GramFunType SourcePos [GramType] GramType
+>    | GramFunType SourcePos GramFunTypeAnnot
 >    | GramForAllType SourcePos [GramId] GramType
 >   deriving (Show, Eq)
 

@@ -199,8 +199,11 @@ Needs nesting:
 > example10 = "// swap the elements in a tuple\nswap ( tuple ) :: (a, a) -> (a, a) {\n	var tmp = tuple.fst ;\n	tuple.fst = tuple.snd;\n	tuple.snd = tmp;\n	return tuple;\n}"	
 > example11 = "// list append\nappend ( l1 , l2 ) :: [t] [t] -> [t] {\n	if ( isEmpty ( l1 ) ) {\n		return l2 ;\n	} else {\n		l1.tl = append ( l1.tl, l2 );\n		return l1;\n	}\n}"
 > example12 = "// square the odd numbers in a list and remove the even numbers\nsquareOddNumbers ( list ) :: [Int] -> [Int] {\n	while ( ! isEmpty ( list ) && list.hd % 2 == 0) {\n		list = list.tl ;\n	}\n	if ( ! isEmpty (list) ) {\n		list.hd = list.hd * list.hd;\n		list.tl = squareOddNumbers( list.tl );\n	}\n	return list ;\n}"
-> example13 = "applyId :: (forall a. a -> a) -> b {}"
-> example14 = "applyId :: (forall a b. (b -> b) -> a {}"
+> example13 = "test13(n) :: (Int -> Int) -> Void {}"
+> example14 = "test14(n) :: (a -> a) -> a {}"
+> example15 = "test15(n) :: (forall a. [a] -> Int) -> a {}"
+> example16 = "test16(n) :: ((Int -> Int) Int -> Int) -> Int {}"
+> example17 = "test17(n) :: (forall a b. a -> b) -> a {}"
 > examples = [example1, example2, example3, example4, example5, example6, example7, example8, example9, example10, example11, example12]
 > exampl1Case = lexer nP example1
 > testExample1 = putStrLn $ show $ parseSPL exampl1Case
@@ -230,4 +233,10 @@ Needs nesting:
 > testExample13 = putStrLn $ show $ parseSPL exampl13Case
 > exampl14Case = lexer nP example14
 > testExample14 = putStrLn $ show $ parseSPL exampl14Case
+> exampl15Case = lexer nP example15
+> testExample15 = putStrLn $ show $ parseSPL exampl15Case
+> exampl16Case = lexer nP example16
+> testExample16 = putStrLn $ show $ parseSPL exampl16Case
+> exampl17Case = lexer nP example17
+> testExample17 = putStrLn $ show $ parseSPL exampl17Case
 
