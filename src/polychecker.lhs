@@ -198,7 +198,7 @@ Called with inferProg, returning only the decorated tree.
 >   unify p vfun tfun
 >   return vfun
 >   where listArgTypes _ insts [] [] = return ([], insts)
->         listArgTypes id@(Id pos _) insts (v:vars) [GramFTypes t ftypes] = do
+>         listArgTypes id@(Id pos _) insts (v:vars) (t:ftypes) = do
 >           (newinsts,v) <- unifyWith pos insts v t
 >           (arglist, finsts) <- listArgTypes id newinsts vars ftypes
 >           return $ (v:arglist, finsts)
@@ -286,7 +286,7 @@ Called with inferProg, returning only the decorated tree.
 >   return $ GramFuncDecl id (GramFuncDeclTail fargs ftypes stmts)
 >   where funType (TFunc targs tret) = GramFunTypeAnnot (toFTypes targs) (retType tret)
 >         funType (TForAll _ t) = funType t
->         toFTypes = (foldr (\t1 t2 -> [GramFTypes t1 t2]) []) . (map convertToGramType)
+>         toFTypes = map convertToGramType
 >         retType TVoid = GramVoidType nP
 >         retType t = GramRetType $ convertToGramType t
 
@@ -545,10 +545,10 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   let funtype = GramFunTypeAnnot ftypes tret
 >   return $ GramFuncDecl id $ GramFuncDeclTail fargs [funtype] stmts
 >   where convertFTypes [] = return []
->         convertFTypes [GramFTypes t ftypes] = do
+>         convertFTypes (t:ftypes) = do
 >           t <- convertGramType t
 >           ftypes <- convertFTypes ftypes
->           return [GramFTypes t ftypes]
+>           return (t:ftypes)
 >         convertRetType (GramRetType t) = do
 >           t <- convertGramType t
 >           return $ GramRetType t
@@ -605,7 +605,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   if typeAllowed t then return $ GramOverloadedBinary p t op e1 e2
 >   else throwError ("Equality is not defined for functions", p)
 >   where typeAllowed (GramForAllType _ _ _) = False
->         typeAllowed (GramFunType _ _ _) = False
+>         typeAllowed (GramFunType _ _) = False
 >         typeAllowed _ = True
 > postDecorateExpr (GramUnary p op e) = do
 >   e <- postDecorateExpr e
@@ -1072,14 +1072,18 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   return $ TList t
 > convertFromGramType (GramIdType id)               = do
 >   readVarFromGramType id
-> convertFromGramType (GramFunType _ targs tret)    = do
+> convertFromGramType (GramFunType _ (GramFunTypeAnnot targs tret))    = do
 >   targs <- mapM convertFromGramType targs
->   tret <- convertFromGramType tret
+>   tret <- convertFromGramRetType tret
 >   return $ TFunc targs tret
 > convertFromGramType (GramForAllType _ boundids t) = do
 >   tbound <- mapM readVarFromGramType boundids
 >   t <- convertFromGramType t
 >   return $ TForAll (map (\(TBound i) -> i) tbound) t
+
+> convertFromGramRetType :: GramRetType -> Environment Type
+> convertFromGramRetType (GramVoidType _) = do return TVoid
+> convertFromGramRetType (GramRetType t) = do convertFromGramType t
 
 > readVarFromGramType :: GramId -> Environment Type -- note this storage method is safe because the lexer prohibits identifiers starting with underscores
 > readVarFromGramType (Id _ id)
@@ -1103,8 +1107,12 @@ A description of (mutual) deep skolemisation can be found in [1].
 > convertToGramType (TList t)            = GramListType nP (convertToGramType t)
 > convertToGramType (TVar i)             = GramIdType (Id nP ("_t" ++ (show i)))
 > convertToGramType (TBound i)           = GramIdType (Id nP ("_v" ++ (show i)))
-> convertToGramType (TFunc targs tret)   = GramFunType nP (map convertToGramType targs) (convertToGramType tret)
+> convertToGramType (TFunc targs tret)   = GramFunType nP $ GramFunTypeAnnot (map convertToGramType targs) (convertToGramRetType tret)
 > convertToGramType (TForAll tbound t)   = GramForAllType nP (map (\i -> Id nP $ "_v" ++ (show i)) tbound) (convertToGramType t)
+
+> convertToGramRetType :: Type -> GramRetType
+> convertToGramRetType TVoid = GramVoidType nP
+> convertToGramRetType t = GramRetType $ convertToGramType t
 
 > getExpPos :: GramExp -> SourcePos
 > getExpPos (GramBool p _) = p
@@ -1141,16 +1149,19 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   (insts,t2) <- unifyWith p insts v2 t2
 >   unify p v $ TTuple t1 t2
 >   return (insts, TTuple t1 t2)
-> unifyWith p insts v (GramFunType _ [] tret) = do
+> unifyWith p insts v (GramFunType _ (GramFunTypeAnnot [] (GramRetType tret))) = do
 >   vret <- fresh
 >   (insts,tret) <- unifyWith p insts vret tret
 >   unify p v (TFunc [] tret)
 >   return (insts, TFunc [] tret)
-> unifyWith p insts v (GramFunType p' (targ:targs) tret) = do
+> unifyWith p insts v (GramFunType _ (GramFunTypeAnnot [] (GramVoidType _))) = do
+>   unify p v (TFunc [] TVoid)
+>   return (insts, TFunc [] TVoid)
+> unifyWith p insts v (GramFunType p' (GramFunTypeAnnot (targ:targs) tret)) = do
 >   varg <- fresh
 >   vargs <- fresh
 >   (insts,targ)  <- unifyWith p insts varg targ
->   (insts,tfargs) <- unifyWith p insts vargs (GramFunType p' targs tret)
+>   (insts,tfargs) <- unifyWith p insts vargs (GramFunType p' (GramFunTypeAnnot targs tret))
 >   let TFunc targs tret = tfargs
 >   unify p v (TFunc (targ:targs) tret)
 >   return (insts, TFunc (targ:targs) tret)
