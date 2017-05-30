@@ -31,12 +31,14 @@ Once implemented, generate = run generateProgram
 > generateProgram g = do 
 >   write "bra __init"
 >   let (globals, funcs) = sepDecls g
->   sequence $ map addGlobal $ map getVarId globals
->   sequence $ replicate (length globals) $ write "nop"
->   sequence $ map generateFunDecl funcs
+>   sequence_ $ map addGlobalFunc builtinNames
+>   sequence_ $ map (addGlobal . getVarId . GramDeclVar) globals
+>   sequence_ $ map (addGlobalFunc . getVarId . GramDeclFun) funcs
+>   sequence_ $ replicate (length globals) $ write "nop"
+>   sequence_ $ map generateFunDecl funcs
 >   write "\n; initialise global variables"
 >   label "__init"
->   sequence $ map generateVariable globals
+>   sequence_ $ map generateVariable globals
 >   write "bra main"
 >   sequence_ builtins
 
@@ -49,9 +51,10 @@ Once implemented, generate = run generateProgram
 >   where
 >     (vars, funcs) = sepDecls ds
 
-> getVarId :: GramVarDecl -> String
-> getVarId (GramVarDeclType _ (GramVarDeclTail (Id _ varId) _)) = varId
-> getVarId (GramVarDeclVar (GramVarDeclTail (Id _ varId) _)) = varId
+> getVarId :: GramDecl -> String
+> getVarId (GramDeclVar (GramVarDeclType _ (GramVarDeclTail (Id _ varId) _))) = varId
+> getVarId (GramDeclVar (GramVarDeclVar (GramVarDeclTail (Id _ varId) _))) = varId
+> getVarId (GramDeclFun (GramFuncDecl (Id _ funId) _)) = funId
 
 > generateVariable :: GramVarDecl -> Environment ()
 > generateVariable (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr)) = do
@@ -84,13 +87,16 @@ Once implemented, generate = run generateProgram
 >   label funId
 >   let argCounter = length args
 >   if funId /= "main" then write "link 0" else return ()
->   addTypeFrameArgs argCounter $ getArgTypes types
+>   isPoly <- addTypeFrameArgs argCounter $ getArgTypes types
+>   addArg "__env" $ decrIfTrue isPoly argCounter
 >   addArgs args
 >   generateStmtBlock stmts
 >   case getFuncReturnType types of
 >     (GramVoidType _) -> if funId == "main" then write "halt" else write "unlink\nret"
 >     otherwise -> do return ()
 >   where getArgTypes [GramFunTypeAnnot ftypes _] = ftypes
+>         decrIfTrue True x = toInteger $ x-1
+>         decrIfTrue _    x = toInteger x
 
 > genVarDecl :: GramVarDecl -> Environment ()
 > genVarDecl (GramVarDeclType varType (GramVarDeclTail (Id _ varId) expr)) = do
@@ -102,16 +108,22 @@ Once implemented, generate = run generateProgram
 
 > generateFunCall :: GramFunCall -> Environment ()
 > generateFunCall (GramOverloadedFunCall ts (Id _ funId) args) = do
+>   (load, _) <- lookupVar funId
+>   write load
+>   write "ldh 0" -- load environment
 >   functionTypeFrame ts
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
->   write $ "bsr " ++ funId
->   write $ "ajs " ++ show (-1-length args) 
+>   write load -- actual function label
+>   write $ "ldh -1\njsr\najs " ++ show (-2-length args) 
 > generateFunCall (GramFunCall (Id _ funId) args) = do
+>   (load, _) <- lookupVar funId
+>   write load
+>   write "ldh 0" -- load environment
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
->   write $ "bsr " ++ funId
->   write $ "ajs " ++ show (-length args) 
+>   write load
+>   write $ "ldh -1\njsr\najs " ++ show (-1-length args) 
 
 > generateStmtBlock :: [GramStmt] -> Environment ()
 > generateStmtBlock stmts = do
@@ -275,7 +287,7 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >   typeFrame t2
 >   write "stmh 2\nstmh 2"
 > typeFrame (GramIdType (Id _ id))
->   | isPrefixOf "_t" id = do
+>   | isPrefixOf "_t" id || isPrefixOf "_v" id = do
 >     (load, store) <- lookupVar $ "__tf_" ++ drop 2 id
 >     write $ repl load
 >   | otherwise = write "bra __exc_unknown_error"
@@ -290,10 +302,11 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >   functionTypeFrame r
 >   write "stmh 2"
 
-> addTypeFrameArgs :: Int -> [GramType] -> Environment ()
+> addTypeFrameArgs :: Int -> [GramType] -> Environment Bool
 > addTypeFrameArgs locali ts = do
 >   let freeIds = nub $ concat $ map freeTypeVars ts
->   void $ addTypeFrameArgs' locali (length freeIds) 0 freeIds
+>   addTypeFrameArgs' locali (length freeIds) 0 freeIds
+>   return $ not $ null freeIds
 >   where addTypeFrameArgs' :: Int -> Int -> Int -> [String] -> Environment ()
 >         addTypeFrameArgs' _ _ _ [] = return ()
 >         addTypeFrameArgs' locali numFrames i (id:ids) = do
@@ -329,8 +342,12 @@ Standard library
 > generatePrint Nothing = do
 >   write "print: lds -2\nldh -1\nldr PC\nadd\nstr PC"
 >   write "bra __print_char\nbra __print_int\nbra __print_bool\nbra __print_list\nbra __print_tuple\nbra __exc_untyped_variable"
-> generatePrint (Just (GramBasicType _ CharType)) = write "__print_char: lds -1\ntrap 1\nret"
 > generatePrint (Just (GramBasicType _ IntType))  = write "__print_int: lds -1\ntrap 0\nret"
+> generatePrint (Just (GramBasicType _ CharType)) = do
+>   label "__print_char"
+>   printChar '\''
+>   write "lds -1\ntrap 1\nret"
+>   printChar '\''
 > generatePrint (Just (GramBasicType _ BoolType)) = do
 >   write "__print_bool: lds -1\nbrf __print_bool_false"
 >   printText "True"
@@ -340,16 +357,26 @@ Standard library
 >   write "ret"
 > generatePrint (Just (GramListType _ _)) = do
 >   label "__print_list"
+>   write "lds -2\nldh 0\nldh -1\nldc 3\neq\nbrt __print_str" -- "overload" for [Char]
 >   printChar '['
->   write "lds -1\nbrf print_list_post" -- check for empty list
->   write "print_list_elem: lds -2\nldh 0" -- load inner type frame
+>   write "lds -1\nbrf __print_list_post" -- check for empty list
+>   write "__print_list_elem: lds -2\nldh 0" -- load inner type frame
 >   write "lds -2\nldh -1" -- load head
 >   write "bsr print\najs -2" -- print head 
->   write "lds -1\nldh 0\nbrf print_list_post" -- close singleton list
+>   write "lds -1\nldh 0\nbrf __print_list_post" -- close singleton list
 >   printText ", "
->   write "lds -1\nldh 0\nsts -2\nbra print_list_elem" -- for longer lists, recurse
->   label "print_list_post"
+>   write "lds -1\nldh 0\nsts -2\nbra __print_list_elem" -- for longer lists, recurse
+>   label "__print_list_post"
 >   printChar ']'
+>   write "ret"
+>   label "__print_str" -- "overload" for [Char]
+>   printChar '"'
+>   write "lds -1\nbrf __print_str_post" -- check for empty string
+>   write "__print_str_elem: lds -1\nldh -1\ntrap 1" -- print head 
+>   write "lds -1\nldh 0\nbrf __print_str_post" -- check for end of list
+>   write "lds -1\nldh 0\nsts -2\nbra __print_str_elem" -- if more characters remain, recurse 
+>   label "__print_str_post"
+>   printChar '"'
 >   write "ret"
 > generatePrint (Just (GramTupleType _ _ _)) = do
 >   label "__print_tuple"
@@ -428,6 +455,8 @@ Standard library
 
 Standard library handlers
 
+> builtinNames = ["print", "isEmpty", "chr", "ord", "error"]
+
 > builtins = let und = undefined in
 >   [polyBuildIn "print" generatePrint,
 >    polyBuildIn "==" generateEquals,
@@ -441,8 +470,8 @@ Standard library handlers
 > polyBuildIn :: String -> (Maybe GramType -> Environment ()) -> Environment ()
 > polyBuildIn s f = do
 >   let und = undefined
->   let types = [Just $ GramBasicType und CharType, Just $ GramBasicType und IntType, Just $ GramBasicType und BoolType, 
->                Just $ GramListType und und, Just $ GramTupleType und und und, Nothing]
+>   let types = [Nothing, Just $ GramBasicType und CharType, Just $ GramBasicType und IntType, Just $ GramBasicType und BoolType, 
+>                Just $ GramListType und und, Just $ GramTupleType und und und]
 >   write $ "\n; define polymorphic " ++ s
 >   mapM_ f types
 
@@ -517,6 +546,13 @@ Variable handlers
 >   (((d,v):ss), i) <- get
 >   let loadIns = "ldc " ++ show (d+1) ++ "\nlda 0"
 >       storeIns = "ldc " ++ show (d+1) ++ "\nsta 0"
+>   put ((d+1,(id, (loadIns, storeIns)):v):ss, i)
+
+> addGlobalFunc :: Id -> Environment ()
+> addGlobalFunc id = do
+>   (((d,v):ss), i) <- get
+>   let loadIns = "ldc " ++ id ++ "\nldc 0\nstmh 2"
+>       storeIns = "bra __exc_unknown_error"
 >   put ((d+1,(id, (loadIns, storeIns)):v):ss, i)
 
 > addArg :: Id -> Integer -> Environment ()
