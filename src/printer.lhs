@@ -67,7 +67,7 @@
 
 > printFunType :: Int -> GramFunTypeAnnot -> String
 > printFunType i (GramFunTypeAnnot ts r) = 
-> 	        tb i ++ concat (map (printType 0 True) ts) ++ "-> " 
+> 	        tb i ++ concat (map (\t -> printType 0 False t ++ " ") ts) ++ "-> " 
 >           ++ printRetType 0 r 
 
 > printType :: Int -> Bool -> GramType -> String
