@@ -377,12 +377,7 @@ field isn't one of the reserved ones, it throwns an error.
 This parser is self-explanatory.
 
 > pStmt :: MyParser GramStmt
-> pStmt = pIf <|> pWhile <|> pStmt1 <|> pReturn <|> pFuncVarDecl
-
-> pFuncVarDecl :: MyParser GramStmt
-> pFuncVarDecl = do
->   varD <- pVarDecl
->   return $ GramFunVarDecl varD
+> pStmt = pIf <|> pWhile <|> pStmt1 <|> pReturn <|> (GramFunVarDecl <$> pVarDecl) <|> (GramStmtFuncDecl <$> pFuncDecl)
 
 Here a common prefix problem arises because both attribution and
 function call start with "id". So, we left refactor this rule by
@@ -474,16 +469,9 @@ We need a function to take a GramID (String) out of a getTypeId because
 > getTypeId (GramIdType i) = i
 > getTypeId _ = error "PArser error: getTypeId is supposed to work ony on GramTypeId"
 
-Keep in mind that a VarDecl can be two things: either 
-        "var x = 1;" or
-        "Type x = 1;"
-So we need to check for both. We do it in pDecl.
-If the first Token is a TokenVar, then definitely it's a VarDecl. But if
-it's an TokenId, it can either be a VarDecl of a custom type or a FunDecl.
-We can only know which one it is by parsing the remainder (tail). Once we 
-do, we can return the correct result.
-Grammar: Decl = (Type Decl1) | ('var' VarDeclTail)
-         Decl1 = FunDeclTail | (id VarDeclTail)
+Parses a Grammar Declaration. Declarations can be either variable or function
+declarations. 
+Grammar: Decl = VarDecl | FunDecl
 
 > pDecl :: MyParser GramDecl
 > pDecl = do
@@ -491,6 +479,10 @@ Grammar: Decl = (Type Decl1) | ('var' VarDeclTail)
 >   case declTail of
 >     Left v -> return $ GramDeclVar v
 >     Right f -> return $ GramDeclFun f
+
+Parses a variable declaration, which can be of two types: either a getTypeId
+declaration (Int x = 0;) or an inferred declaration (var x = 0;).
+Grammar: VarDecl = (Type | 'var') id '=' Exp ';'
 
 > pVarDecl :: MyParser GramVarDecl
 > pVarDecl = do
@@ -502,6 +494,9 @@ Grammar: Decl = (Type Decl1) | ('var' VarDeclTail)
 >   case declHead of
 >       Left declType -> return $ GramVarDeclType declType vId expr
 >       Right _ -> return $ GramVarDeclVar vId expr
+
+Parses a function declaration. Type annotations are optional.
+Grammar: FunDecl = 'function' id FunDeclTail '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
 
 > pFuncDecl :: MyParser GramFuncDecl
 > pFuncDecl = do

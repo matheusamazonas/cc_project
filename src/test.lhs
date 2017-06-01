@@ -200,7 +200,8 @@ Needs nesting:
 > example15 = "function test15(n) :: (forall a. [a] -> Int) -> a {}"
 > example16 = "function test16(n) :: ((Int -> Int) Int -> Int) -> Int {}"
 > example17 = "function test17(n) :: (forall a b. a -> b) -> a {}"
-> examples = [example1, example2, example3, example4, example5, example6, example7, example8, example9, example10, example11, example12, example13, example14, example15, example16, example17]
+> example18 = "function double (x) :: Int -> Int { function twice (y) { return y+y; } return x*2; }"
+> examples = [example1, example2, example3, example4, example5, example6, example7, example8, example9, example10, example11, example12, example13, example14, example15, example16, example17, example18]
 > exampl1Case = lexer nP example1
 > testExample1 = putStrLn $ show $ parseSPL exampl1Case
 > exampl2Case = lexer nP example2
@@ -235,6 +236,9 @@ Needs nesting:
 > testExample16 = putStrLn $ show $ parseSPL exampl16Case
 > exampl17Case = lexer nP example17
 > testExample17 = putStrLn $ show $ parseSPL exampl17Case
+> exampl18Case = lexer nP example18
+> testExample18 = putStrLn $ show $ parseSPL exampl18Case
+
 > exampleCases = map (lexer nP) examples
 > testExamples = putStrLn $ unlines $ map (show . parseSPL) exampleCases
 

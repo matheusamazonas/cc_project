@@ -62,6 +62,7 @@
 >    | GramFunVarDecl GramVarDecl
 >    | GramAttr SourcePos GramVar GramExp 
 >    | GramStmtFunCall GramFunCall
+>    | GramStmtFuncDecl GramFuncDecl
 >   deriving (Show, Eq)   
 
 > data GramVarDecl = 
