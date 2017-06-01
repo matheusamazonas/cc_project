@@ -465,10 +465,9 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   tret <- convert tret
 >   funid <- getVarId id
 >   let vfun = convertToGramType $ TVar funid
->   if isPolymorph tpolyfun then return (p, i, tret, GramOverloadedFunCall (vfun:argtypes) id args)
->   else return (p, i, tret, GramOverloadedFunCall [vfun] id args) -- overloading with [vfun] is a hack. however, for HOF the function name is removed from the scope after 
->   where inferArgs _ [] [] = return ([],[])                       -- function exit, and post-decoration requires the function variable ID to retrieve the function type,
->         inferArgs (Id _ i) (e:es) (targ:targs) = do              -- so that polymorphic function calls can be annotated. Thus, we include the variable ID here.
+>   return (p, i, tret, GramOverloadedFunCall (vfun:argtypes) id args) -- this way, all argument types are included,
+>   where inferArgs _ [] [] = return ([],[])                           -- so that in post-decoration we can decide which ones
+>         inferArgs (Id _ i) (e:es) (targ:targs) = do                  -- to include as actual overloaded type annotations
 >           e <- addErrorDesc ("Argument to function " ++ i ++ " has wrong type: ") $ checkTypePoly e targ
 >           (es,targs) <- inferArgs id es targs
 >           targ <- convert targ
@@ -617,18 +616,16 @@ A description of (mutual) deep skolemisation can be found in [1].
 > postDecorateExpr e = return e
 
 > postDecorateFunCall :: GramFunCall -> Environment (Type, String, SourcePos, GramFunCall)
-> postDecorateFunCall funcall = case funcall of
->   GramOverloadedFunCall ts id@(Id p i) es -> do
->     ts <- mapM convertGramType ts
->     es <- mapM postDecorateExpr es
->     tfun <- convertFromGramType $ head ts
->     let (targs, tret) = splitFunc tfun
->     tret <- convert tret
->     if length ts == 1 then return (tret, i, p, GramFunCall id es) -- see inferExpr for why this is done
->     else do
->       targs <- mapM convert targs
->       let annots = evalState (typeAnnotations (map convertToGramType targs) $ tail ts) []
->       return (tret, i, p, GramOverloadedFunCall annots id es)
+> postDecorateFunCall (GramOverloadedFunCall ts id@(Id p i) es) = do -- all function calls are internally "overloaded" until post-decoration, see inferFuncall
+>   ts <- mapM convertGramType ts
+>   es <- mapM postDecorateExpr es
+>   tfun <- convertFromGramType $ head ts
+>   let (targs, tret) = splitFunc tfun
+>   tret <- convert tret
+>   targs <- mapM convert targs
+>   let annots = evalState (typeAnnotations (map convertToGramType targs) $ tail ts) []
+>   if null annots then return (tret, i, p, GramFunCall id es)
+>   else return (tret, i, p, GramOverloadedFunCall annots id es)
 >   where typeAnnotations :: [GramType] -> [GramType] -> State [String] [GramType]
 >         typeAnnotations [] [] = return []
 >         typeAnnotations (tsig:tsigs) (targ:targs) = do
