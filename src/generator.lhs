@@ -173,7 +173,7 @@ Once implemented, generate = run generateProgram
 >     (f:_) -> do
 >       write load
 >       descendFields True f
-> generateStmt (GramStmtFunCall funCall) = do generateFunCall funCall
+> generateStmt (GramStmtFunCall funCall) = generateFunCall funCall
 
 
 > generateExpr :: GramExp -> Environment ()
@@ -346,8 +346,9 @@ Standard library
 > generatePrint (Just (GramBasicType _ CharType)) = do
 >   label "__print_char"
 >   printChar '\''
->   write "lds -1\ntrap 1\nret"
+>   write "lds -1\ntrap 1"
 >   printChar '\''
+>   write "ret"
 > generatePrint (Just (GramBasicType _ BoolType)) = do
 >   write "__print_bool: lds -1\nbrf __print_bool_false"
 >   printText "True"
