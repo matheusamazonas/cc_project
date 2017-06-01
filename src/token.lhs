@@ -54,5 +54,6 @@
 >    | TokenEOL
 >    | TokenChar Char
 >    | TokenForAll
+>    | TokenFunction
 >   deriving (Show, Eq)
 

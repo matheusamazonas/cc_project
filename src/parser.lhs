@@ -459,30 +459,6 @@ Grammar: 'return' [ Exp ] ';'
 >   void $ isToken TokenEOL
 >   return $ GramReturn p opt
 
-The parser pVarDecl is not used in Decl. It's used inside FuncDeclTail 
-in the grammar rule that says that a function may have many variables
-declared inside it.
-
-> pVarDecl :: MyParser GramVarDecl
-> pVarDecl = pVarDeclVar <|> pVarDeclCustom
-
-The parser pVarDeclCustom is only used by pVarDecl, it's not used in 
-pDecl. Check comments above.
-
-> pVarDeclCustom :: MyParser GramVarDecl
-> pVarDeclCustom = do
->   declType <- pType
->   declTail <- pVarDeclTail
->   return $ GramVarDeclType declType declTail
-
-The parser pVarDeclVar is only used by pVarDecl, it's not used in pDecl. 
-Chech comments above.
-
-> pVarDeclVar :: MyParser GramVarDecl
-> pVarDeclVar = do
->   void $ isToken TokenVar
->   declTail <- pVarDeclTail
->   return $ GramVarDeclVar declTail 
 
 Here starts the parsers involved with Decl. Decl can be either a VarDecl
 (variable declaration) or a FunDecl (function declaration). A hidden 
@@ -496,7 +472,7 @@ We need a function to take a GramID (String) out of a getTypeId because
 
 > getTypeId :: GramType -> GramId
 > getTypeId (GramIdType i) = i
-> getTypeId _ = error "getTypeId is supposed to work ony on GramTypeId"
+> getTypeId _ = error "PArser error: getTypeId is supposed to work ony on GramTypeId"
 
 Keep in mind that a VarDecl can be two things: either 
         "var x = 1;" or
@@ -511,55 +487,35 @@ Grammar: Decl = (Type Decl1) | ('var' VarDeclTail)
 
 > pDecl :: MyParser GramDecl
 > pDecl = do
->     declHead <- (Left) <$> pType <|> (Right) <$> isToken TokenVar 
->     case declHead of
->       Left declType -> pDecl1 declType
->       Right _ -> pDecl2
-
-pDecl parses any part after a TokenType. It can either be a function call
-or a definition of a variable with a given type (without using "var").
-
-> pDecl1 :: GramType -> MyParser GramDecl
-> pDecl1 declType = do
->   declTail <- (Left) <$> pVarDeclTail <|> (Right) <$> pFuncDeclTail	
+>   declTail <- (Left) <$> pVarDecl <|> (Right) <$> pFuncDecl	
 >   case declTail of
->     Left v -> return $ GramDeclVar (GramVarDeclType declType v) 
->     Right f -> return $ GramDeclFun (GramFuncDecl (getTypeId declType) f)
+>     Left v -> return $ GramDeclVar v
+>     Right f -> return $ GramDeclFun f
 
-pDecl2 parses VarDecl. Since the TokenVar should've been parsed before
-this is called and that it's useless for the Syntax Tree, we don't need it.
-pDecl2 doesn't exis in the grammar, it's defined just so we can construct 
-the corrent GramDecl with it.
-
-> pDecl2 :: MyParser GramDecl
-> pDecl2 = do
->   declTail <- pVarDeclTail
->   return $ GramDeclVar (GramVarDeclVar declTail)
-
-> pVarDeclTail :: MyParser GramVarDeclTail
-> pVarDeclTail = do
->   (Id i p) <- pId
+> pVarDecl :: MyParser GramVarDecl
+> pVarDecl = do
+>   declHead <- (Left) <$> pType <|> (Right) <$> isToken TokenVar 	
+>   vId <- pId
 >   void $ isToken TokenAttribution
 >   expr <- pExpr
 >   void $ isToken TokenEOL
->   return $ GramVarDeclTail (Id i p) expr 
+>   case declHead of
+>       Left declType -> return $ GramVarDeclType declType vId expr
+>       Right _ -> return $ GramVarDeclVar vId expr
 
-> pFuncArgs :: MyParser [GramId]
-> pFuncArgs = do
->   args <- sepBy pId (isToken TokenComma) 
->   return args
-
-> pFuncDeclTail :: MyParser GramFuncDeclTail
-> pFuncDeclTail = do
+> pFuncDecl :: MyParser GramFuncDecl
+> pFuncDecl = do
+>   void $ isToken TokenFunction
+>   funcId <- pId
 >   void $ isToken TokenOpenP
->   args <- pFuncArgs
+>   args <- sepBy pId (isToken TokenComma)
 >   void $ isToken TokenCloseP
 >   optFunType <- optionMaybe pOptType
 >   void $ isToken TokenOpenCurlyB
 >   stmts <- many pStmt
 >   void $ isToken TokenCloseCurlyB
 >   let fType = maybeToList optFunType in 
->       return $ GramFuncDeclTail args fType stmts
+>       return $ GramFuncDecl funcId args fType stmts
 >   where
 >     pOptType = do
 >       void $ isToken TokenFuncDecl

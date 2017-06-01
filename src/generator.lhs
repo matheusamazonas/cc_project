@@ -52,17 +52,17 @@ Once implemented, generate = run generateProgram
 >     (vars, funcs) = sepDecls ds
 
 > getVarId :: GramDecl -> String
-> getVarId (GramDeclVar (GramVarDeclType _ (GramVarDeclTail (Id _ varId) _))) = varId
-> getVarId (GramDeclVar (GramVarDeclVar (GramVarDeclTail (Id _ varId) _))) = varId
-> getVarId (GramDeclFun (GramFuncDecl (Id _ funId) _)) = funId
+> getVarId (GramDeclVar (GramVarDeclType _ (Id _ varId) _)) = varId
+> getVarId (GramDeclVar (GramVarDeclVar (Id _ varId) _)) = varId
+> getVarId (GramDeclFun (GramFuncDecl (Id _ funId) _ _ _)) = funId
 
 > generateVariable :: GramVarDecl -> Environment ()
-> generateVariable (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr)) = do
+> generateVariable (GramVarDeclVar (Id _ varId) expr) = do
 >   write $ "\n; initialise global: " ++ varId
 >   generateExpr expr
 >   (_, store) <- lookupVar varId
 >   write store
-> generateVariable (GramVarDeclType _ (GramVarDeclTail (Id _ varId) expr)) = do
+> generateVariable (GramVarDeclType _ (Id _ varId) expr) = do
 >   write $ "\n; initialise global: " ++ varId
 >   generateExpr expr
 >   (_, store) <- lookupVar varId
@@ -81,7 +81,7 @@ Once implemented, generate = run generateProgram
 > getFuncReturnType ((GramFunTypeAnnot _ ret):_) = ret
 
 > generateFunDecl :: GramFuncDecl -> Environment ()
-> generateFunDecl (GramFuncDecl (Id _ funId) (GramFuncDeclTail args types stmts)) = do
+> generateFunDecl (GramFuncDecl (Id _ funId) args types stmts) = do
 >   write $ "\n; define function " ++ funId
 >   pushScope
 >   label funId
@@ -99,10 +99,10 @@ Once implemented, generate = run generateProgram
 >         decrIfTrue _    x = toInteger x
 
 > genVarDecl :: GramVarDecl -> Environment ()
-> genVarDecl (GramVarDeclType varType (GramVarDeclTail (Id _ varId) expr)) = do
+> genVarDecl (GramVarDeclType varType (Id _ varId) expr) = do
 >   addVar varId
 >   generateExpr expr
-> genVarDecl (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr)) = do
+> genVarDecl (GramVarDeclVar (Id _ varId) expr) = do
 >   addVar varId
 >   generateExpr expr
 
@@ -159,10 +159,10 @@ Once implemented, generate = run generateProgram
 > generateStmt (GramReturn _ (Just expr)) = do
 >   generateExpr expr
 >   write "str RR\nunlink\nret"
-> generateStmt (GramFunVarDecl (GramVarDeclType t (GramVarDeclTail (Id _ varId) expr))) = do
+> generateStmt (GramFunVarDecl (GramVarDeclType t (Id _ varId) expr)) = do
 >   addVar varId
 >   generateExpr expr
-> generateStmt (GramFunVarDecl (GramVarDeclVar (GramVarDeclTail (Id _ varId) expr))) = do
+> generateStmt (GramFunVarDecl (GramVarDeclVar (Id _ varId) expr)) = do
 >   addVar varId
 >   generateExpr expr
 > generateStmt (GramAttr _ (Var (Id _ varId) fields) expr) = do

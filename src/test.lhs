@@ -10,15 +10,9 @@
 
 This parser is here because it's used just for test purposes
 
-> pFuncDecl :: MyParser GramFuncDecl
-> pFuncDecl = do
->   i <- pId
->   t <- pFuncDeclTail
->   return (GramFuncDecl i t)
-
 > parseId       = parse (pId <* eof) "test"
 > parseRetType  = parse (pRetType <* eof) "test"
-> parseFunType  = parse (pFunType <* eof) "test"
+> parseFunType  = parse (pFunTypeAnnot <* eof) "test"
 > parseExpr8    = parse (pExpr8 <* eof) "test"
 > parseExpr7    = parse (pExpr7 <* eof) "test"
 > parseExpr6    = parse (pExpr6 <* eof) "test"
@@ -73,6 +67,8 @@ This parser is here because it's used just for test purposes
 >   void $ testAttrib
 >   putStrLn "------ Return ------"
 >   void $ testReturn
+>   putStrLn "------ Examples ------"
+>   void $ testExamples
 >   return ()	
 
 == RetType
@@ -177,34 +173,34 @@ Needs nesting:
 
 == FuncDecl
 
-> funcDecl0 = "facR (n) :: Int -> Int { return; }"
-> funcDecl1 = "facR (n) { return; }"
-> funcDecl2 = "facR () { return; }"
-> funcDecl3 = "facR ( n ) :: Int -> Int {\nif ( n < 2 ) {\nreturn 1;\n} else {\nreturn n * facR ( n - 1 );\n}\n}"
+> funcDecl0 = "function facR (n) :: Int -> Int { return; }"
+> funcDecl1 = "function facR (n) { return; }"
+> funcDecl2 = "function facR () { return; }"
+> funcDecl3 = "function facR ( n ) :: Int -> Int {\nif ( n < 2 ) {\nreturn 1;\n} else {\nreturn n * facR ( n - 1 );\n}\n}"
 > funcDeclProgs = [funcDecl0, funcDecl1, funcDecl2, funcDecl3]
 > funcDeclCases = map (lexer nP) funcDeclProgs
 > testFuncDecl = putStrLn $ unlines $ map (show . parseFunDecl) funcDeclCases
 
 == Example1
 
-> example1 = "facR ( n ) :: Int -> Int {\nif ( n < 2 ) {\nreturn 1;\n} else {\nreturn n * facR ( n - 1 );\n}\n}"
-> example2 = "// The iterative version of the factorial function\nfacI ( n ) :: Int -> Int {\nvar r = 1;\nwhile ( n > 1 ) {\nr = r * n;\nn = n - 1;\n}\nreturn r;\n}"
-> example3 = "/// A main function to check the results\n// It takes no arguments, so the type looks like this:\nmain ( ) :: -> Void {\nvar n = 0;\nvar facN = 1;\nvar ok = True;\n	\nwhile ( n < 20 ) {\nfacN = facR ( n );\nif ( facN != facI ( n ) || facN != facL ( n )) {\nprint ( n : facN : facI ( n ) : facL ( n ) : [] );\nok = False;\n}\nn = n + 1;\n}\nprint ( ok );\n}"
-> example4 = "// A list based factorial function\n// Defined here to show that functions can be given in any order (unlike C)\nfacL ( n ) :: Int -> Int {\nreturn product (fromTo ( 1, n ) );\n}"
-> example5 = "// Computes the product of a list of integers\nproduct ( list ) :: [Int] -> Int {\n	if ( isEmpty ( list ) ) {\n		return 1;\n	} else {\n		return list.hd * product ( list.tl );\n	}\n}"
-> example6 = "// Generates a list of integers from the first to the last argument\nfromTo ( from, to ) :: Int Int -> [ Int ] {\n	if ( from <= to ) {\n		return from : fromTo ( from + 1, to );\n	} else {\n		return [] ;\n	}\n}"
-> example7 = "// Make a reversed copy of any list\nreverse ( list ) :: [ t ] -> [ t ] {\n	var accu = [];\n	while ( ! isEmpty ( list ) ) {\n		accu = list.hd : accu ;\n		list = list.tl;\n	}\n	return accu ;\n}"
-> example8 = "// Absolute value, in a strange layout\nabs ( n ) :: Int -> Int { if (n < 0) { return -n; } else { return n ; } }"
-> example9 = "// make a copy of a tuple with swapped elements\nswapCopy ( pair ) :: (a, b) -> (b, a) {\n	return ( pair. snd, pair.fst );\n}"	
-> example10 = "// swap the elements in a tuple\nswap ( tuple ) :: (a, a) -> (a, a) {\n	var tmp = tuple.fst ;\n	tuple.fst = tuple.snd;\n	tuple.snd = tmp;\n	return tuple;\n}"	
-> example11 = "// list append\nappend ( l1 , l2 ) :: [t] [t] -> [t] {\n	if ( isEmpty ( l1 ) ) {\n		return l2 ;\n	} else {\n		l1.tl = append ( l1.tl, l2 );\n		return l1;\n	}\n}"
-> example12 = "// square the odd numbers in a list and remove the even numbers\nsquareOddNumbers ( list ) :: [Int] -> [Int] {\n	while ( ! isEmpty ( list ) && list.hd % 2 == 0) {\n		list = list.tl ;\n	}\n	if ( ! isEmpty (list) ) {\n		list.hd = list.hd * list.hd;\n		list.tl = squareOddNumbers( list.tl );\n	}\n	return list ;\n}"
-> example13 = "test13(n) :: (Int -> Int) -> Void {}"
-> example14 = "test14(n) :: (a -> a) -> a {}"
-> example15 = "test15(n) :: (forall a. [a] -> Int) -> a {}"
-> example16 = "test16(n) :: ((Int -> Int) Int -> Int) -> Int {}"
-> example17 = "test17(n) :: (forall a b. a -> b) -> a {}"
-> examples = [example1, example2, example3, example4, example5, example6, example7, example8, example9, example10, example11, example12]
+> example1 = "function facR ( n ) :: Int -> Int {\nif ( n < 2 ) {\nreturn 1;\n} else {\nreturn n * facR ( n - 1 );\n}\n}"
+> example2 = "// The iterative version of the factorial function\nfunction facI ( n ) :: Int -> Int {\nvar r = 1;\nwhile ( n > 1 ) {\nr = r * n;\nn = n - 1;\n}\nreturn r;\n}"
+> example3 = "/// A main function to check the results\n// It takes no arguments, so the type looks like this:\nfunction main ( ) :: -> Void {\nvar n = 0;\nvar facN = 1;\nvar ok = True;\n	\nwhile ( n < 20 ) {\nfacN = facR ( n );\nif ( facN != facI ( n ) || facN != facL ( n )) {\nprint ( n : facN : facI ( n ) : facL ( n ) : [] );\nok = False;\n}\nn = n + 1;\n}\nprint ( ok );\n}"
+> example4 = "// A list based factorial function\n// Defined here to show that functions can be given in any order (unlike C)\nfunction facL ( n ) :: Int -> Int {\nreturn product (fromTo ( 1, n ) );\n}"
+> example5 = "// Computes the product of a list of integers\nfunction product ( list ) :: [Int] -> Int {\n	if ( isEmpty ( list ) ) {\n		return 1;\n	} else {\n		return list.hd * product ( list.tl );\n	}\n}"
+> example6 = "// Generates a list of integers from the first to the last argument\nfunction fromTo ( from, to ) :: Int Int -> [ Int ] {\n	if ( from <= to ) {\n		return from : fromTo ( from + 1, to );\n	} else {\n		return [] ;\n	}\n}"
+> example7 = "// Make a reversed copy of any list\nfunction reverse ( list ) :: [ t ] -> [ t ] {\n	var accu = [];\n	while ( ! isEmpty ( list ) ) {\n		accu = list.hd : accu ;\n		list = list.tl;\n	}\n	return accu ;\n}"
+> example8 = "// Absolute value, in a strange layout\nfunction abs ( n ) :: Int -> Int { if (n < 0) { return -n; } else { return n ; } }"
+> example9 = "// make a copy of a tuple with swapped elements\nfunction swapCopy ( pair ) :: (a, b) -> (b, a) {\n	return ( pair. snd, pair.fst );\n}"	
+> example10 = "// swap the elements in a tuple\nfunction swap ( tuple ) :: (a, a) -> (a, a) {\n	var tmp = tuple.fst ;\n	tuple.fst = tuple.snd;\n	tuple.snd = tmp;\n	return tuple;\n}"	
+> example11 = "// list append\nfunction append ( l1 , l2 ) :: [t] [t] -> [t] {\n	if ( isEmpty ( l1 ) ) {\n		return l2 ;\n	} else {\n		l1.tl = append ( l1.tl, l2 );\n		return l1;\n	}\n}"
+> example12 = "// square the odd numbers in a list and remove the even numbers\nfunction squareOddNumbers ( list ) :: [Int] -> [Int] {\n	while ( ! isEmpty ( list ) && list.hd % 2 == 0) {\n		list = list.tl ;\n	}\n	if ( ! isEmpty (list) ) {\n		list.hd = list.hd * list.hd;\n		list.tl = squareOddNumbers( list.tl );\n	}\n	return list ;\n}"
+> example13 = "function test13(n) :: (Int -> Int) -> Void {}"
+> example14 = "function test14(n) :: (a -> a) -> a {}"
+> example15 = "function test15(n) :: (forall a. [a] -> Int) -> a {}"
+> example16 = "function test16(n) :: ((Int -> Int) Int -> Int) -> Int {}"
+> example17 = "function test17(n) :: (forall a b. a -> b) -> a {}"
+> examples = [example1, example2, example3, example4, example5, example6, example7, example8, example9, example10, example11, example12, example13, example14, example15, example16, example17]
 > exampl1Case = lexer nP example1
 > testExample1 = putStrLn $ show $ parseSPL exampl1Case
 > exampl2Case = lexer nP example2
@@ -239,4 +235,6 @@ Needs nesting:
 > testExample16 = putStrLn $ show $ parseSPL exampl16Case
 > exampl17Case = lexer nP example17
 > testExample17 = putStrLn $ show $ parseSPL exampl17Case
+> exampleCases = map (lexer nP) examples
+> testExamples = putStrLn $ unlines $ map (show . parseSPL) exampleCases
 

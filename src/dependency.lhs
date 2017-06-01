@@ -33,15 +33,15 @@ Called with dependencyBlocks.
 > declDeps :: GramDecl -> (GramDecl, String, [String])
 > declDeps (GramDeclVar vardecl) = (GramDeclVar vardecl, varname, deps)
 >   where (varname, deps) = varDeps [] vardecl
-> declDeps (GramDeclFun funcdecl) = (GramDeclFun funcdecl, funcname, funcDeps funcdecltail)
->   where (GramFuncDecl (Id _ funcname) funcdecltail) = funcdecl
+> declDeps (GramDeclFun fDecl) = (GramDeclFun fDecl, fId, funcDeps args stmts)
+>   where (GramFuncDecl (Id _ fId) args _ stmts) = fDecl
 
 > varDeps :: [String] -> GramVarDecl -> (String, [String])
-> varDeps locals (GramVarDeclVar    (GramVarDeclTail (Id _ varname) e)) = (varname, exprDeps locals e)
-> varDeps locals (GramVarDeclType _ (GramVarDeclTail (Id _ varname) e)) = (varname, exprDeps locals e)
+> varDeps locals (GramVarDeclVar    (Id _ varname) e) = (varname, exprDeps locals e)
+> varDeps locals (GramVarDeclType _ (Id _ varname) e) = (varname, exprDeps locals e)
 
-> funcDeps :: GramFuncDeclTail -> [String]
-> funcDeps (GramFuncDeclTail fargs _ stmts) = blockDeps (argList fargs) stmts
+> funcDeps :: [GramId] -> [GramStmt] -> [String]
+> funcDeps fargs stmts = blockDeps (argList fargs) stmts
 >   where argList [] = []
 >         argList (Id _ argname:fargs) = argname : argList fargs
 

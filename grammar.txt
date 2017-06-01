@@ -1,10 +1,9 @@
 ------------- Modified grammar -------------
 
 SPL = Decl+
-Decl = (Type Decl1) | ('var' VarDeclTail)
-Decl1 = FunDeclTail | VarDeclTail
-VarDeclTail = id '=' Exp ';'
-FunDeclTail = '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
+Decl = VarDecl | FunDecl
+VarDecl = (Type | 'var') id '=' Exp ';'
+FunDecl = 'function' id FunDeclTail '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
 RetType = Type | 'Void'
 FunType = [ FTypes ] '->' RetType
 FTypes = Type [ FTypes ]
@@ -12,7 +11,7 @@ Type = BasicType
 	| ’(’ Type ’,’ Type ’)’ 
 	| ’[’ Type ’]’
 	| id
-	| '(' ['forall' id+ '.'] FunType ')'
+	| '(' ['forall' id+ '.'] FunType ')' 
 BasicType = 'Int' | 'Bool' | 'Char'
 FArgs = id [ ',' FArgs ]
 Stmt = 'if' '(' Exp ')' '{' Stmt* '}' [ 'else' '{' Stmt* '}' ]

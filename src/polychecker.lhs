@@ -168,8 +168,8 @@ Called with inferProg, returning only the decorated tree.
 >         | otherwise -> return ()
 >   where isVar (GramDeclVar _) = True
 >         isVar _ = False
->         getId (GramDeclVar (GramVarDeclType _ (GramVarDeclTail id _))) = id
->         getId (GramDeclVar (GramVarDeclVar (GramVarDeclTail id _))) = id
+>         getId (GramDeclVar (GramVarDeclType _ id _)) = id
+>         getId (GramDeclVar (GramVarDeclVar id _)) = id
 
 ===============================================================================
  Global declarations - stage 2a
@@ -177,18 +177,18 @@ Called with inferProg, returning only the decorated tree.
 
 > inferVarDeclHeader :: GramVarDecl -> Environment Type
 > inferVarDeclHeader vardecl = declareVar $ getName vardecl
->   where getName (GramVarDeclType _ (GramVarDeclTail vid _)) = vid
->         getName (GramVarDeclVar    (GramVarDeclTail vid _)) = vid
+>   where getName (GramVarDeclType _ vid _) = vid
+>         getName (GramVarDeclVar    vid _) = vid
 
 > inferFunDeclHeader :: GramFuncDecl -> Environment Type
-> inferFunDeclHeader (GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs [] stmts)) = do -- let func = \arg1. (...) \argn. stmts
+> inferFunDeclHeader (GramFuncDecl id@(Id p i) fargs [] stmts) = do -- let func = \arg1. (...) \argn. stmts
 >   vfun <- declareVar id
 >   vargs <- mapM (\_ -> fresh) fargs
 >   vret <- fresh
 >   let tfun = TFunc vargs vret
 >   unify p vfun tfun
 >   return vfun
-> inferFunDeclHeader (GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs [GramFunTypeAnnot ftypes tret] stmts)) = do -- let func = (\arg1. (...) \argn. stmts) :: t1 (...) tn -> tret
+> inferFunDeclHeader (GramFuncDecl id@(Id p i) fargs [GramFunTypeAnnot ftypes tret] stmts) = do -- let func = (\arg1. (...) \argn. stmts) :: t1 (...) tn -> tret
 >   vfun <- declareVar id
 >   vargs <- mapM (\_ -> fresh) fargs
 >   vret <- fresh
@@ -216,24 +216,24 @@ Called with inferProg, returning only the decorated tree.
 
 > inferVarDeclBody :: GramVarDecl -> Environment GramVarDecl
 > inferVarDeclBody vardecl = case vardecl of
->   GramVarDeclType annot vardecltail -> do -- let var = (exp::t)
->     (i, p, v, e, vid) <- inferVarDeclTailPre vardecltail
+>   GramVarDeclType annot varId expr -> do -- let var = (exp::t)
+>     (i, p, v, e, vid) <- inferVarDeclTailPre varId expr
 >     (_,poly) <- unifyWith p [] v annot
 >     e <- addErrorDesc ("Variable type annotation does not match given expression (" ++ i ++ "): ") $ replErr i $ checkTypePoly e poly
 >     generalise [v]
->     inferVarDeclTailPost vardecltail v vid
->     return $ GramVarDeclType annot $ GramVarDeclTail (Id p i) e
->   GramVarDeclVar vardecltail    -> do -- let var = exp
->     (i, p, v, e, vid) <- inferVarDeclTailPre vardecltail
+>     inferVarDeclTailPost varId expr v vid
+>     return $ GramVarDeclType annot (Id p i) e
+>   GramVarDeclVar varId expr    -> do -- let var = exp
+>     (i, p, v, e, vid) <- inferVarDeclTailPre varId expr
 >     e <- addErrorDesc ("Variable declaration failed (" ++ i ++ "): ") $ replErr i $ inferExpr e $ Infer v
 >     generalise [v]
->     inferVarDeclTailPost vardecltail v vid
->     return $ GramVarDeclVar $ GramVarDeclTail (Id p i) e
->   where inferVarDeclTailPre (GramVarDeclTail id@(Id p i) e) = do
+>     inferVarDeclTailPost varId expr v vid
+>     return $ GramVarDeclVar (Id p i) e
+>   where inferVarDeclTailPre id@(Id p i) e = do
 >           v <- getVarType id
 >           vid <- removeFromScope id
 >           return (i, p, v, e, vid)
->         inferVarDeclTailPost (GramVarDeclTail id@(Id p i) e) v vid = do
+>         inferVarDeclTailPost id@(Id p i) e v vid = do
 >           v <- convert v
 >           addToScope id vid
 >           if occurs vid v then throwError ("Recursive variable definition detected: " ++ i, p)
@@ -241,7 +241,7 @@ Called with inferProg, returning only the decorated tree.
 >         replErr var = replaceErrorType ("Variable out of scope: " ++ var) ("Recursive variable definition detected: " ++ var)
 
 > inferFunDeclBody :: GramFuncDecl -> Environment GramFuncDecl
-> inferFunDeclBody fd@(GramFuncDecl id@(Id p i) (GramFuncDeclTail fargs ftypes stmts)) = do 
+> inferFunDeclBody fd@(GramFuncDecl id@(Id p i) fargs ftypes stmts) = do 
 >   fid <- getVarId id
 >   tfun <- getVarType id
 >   let TFunc arglist vret = tfun
@@ -259,7 +259,7 @@ Called with inferProg, returning only the decorated tree.
 >       if vret == TVoid then return ()
 >       else throwError ("Non-void function contains non-returning code paths: " ++ i, p)
 >     AlwaysReturns -> return ()
->   return $ GramFuncDecl id $ GramFuncDeclTail fargs ftypes stmts
+>   return $ GramFuncDecl id fargs ftypes stmts
 >   where declareArgs [] _ = return ()
 >         declareArgs (aid:fargs) ai = do
 >           addToScope aid ai
@@ -272,18 +272,18 @@ Called with inferProg, returning only the decorated tree.
 ===============================================================================
 
 > inferVarDeclPost :: GramVarDecl -> Environment GramVarDecl
-> inferVarDeclPost vardecl = do
->   let (id,vartail) = readTail vardecl
->   t <- getVarType id
->   return $ GramVarDeclType (convertToGramType t) vartail
->   where readTail (GramVarDeclVar vartail@(GramVarDeclTail id _)) = (id, vartail)
->         readTail (GramVarDeclType _ vartail@(GramVarDeclTail id _)) = (id, vartail)
+> inferVarDeclPost (GramVarDeclVar vId expr) = do
+>   t <- getVarType vId
+>   return $ GramVarDeclType (convertToGramType t) vId expr
+> inferVarDeclPost (GramVarDeclType _ vId expr) = do
+>   t <- getVarType vId
+>   return $ GramVarDeclType (convertToGramType t) vId expr
 
 > inferFunDeclPost :: GramFuncDecl -> Environment GramFuncDecl
-> inferFunDeclPost fd@(GramFuncDecl id (GramFuncDeclTail fargs _ stmts)) = do
+> inferFunDeclPost fd@(GramFuncDecl id fargs _ stmts) = do
 >   tfun <- getVarType id
 >   let ftypes = [funType tfun]
->   return $ GramFuncDecl id (GramFuncDeclTail fargs ftypes stmts)
+>   return $ GramFuncDecl id fargs ftypes stmts
 >   where funType (TFunc targs tret) = GramFunTypeAnnot (toFTypes targs) (retType tret)
 >         funType (TForAll _ t) = funType t
 >         toFTypes = map convertToGramType
@@ -382,8 +382,8 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   vardecl <- inferVarDeclBody vardecl
 >   vardecl <- inferVarDeclPost vardecl
 >   return (getPos vardecl, DoesNotReturn, GramFunVarDecl vardecl)
->   where getPos (GramVarDeclType _ (GramVarDeclTail (Id p i) _)) = p
->         getPos (GramVarDeclVar    (GramVarDeclTail (Id p i) _)) = p
+>   where getPos (GramVarDeclType _ (Id p i) _) = p
+>         getPos (GramVarDeclVar    (Id p i) _) = p
 > inferStmt (GramAttr p (Var id@(Id pos i) fields) e) texp = do -- let var = (exp::t) (global typed variable declaration), but with fields
 >   vid <- getVarId id
 >   t <- getVarType id
@@ -532,18 +532,18 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   return $ GramDeclFun fundecl 
 
 > postDecorateVarDecl :: GramVarDecl -> Environment GramVarDecl
-> postDecorateVarDecl (GramVarDeclType t (GramVarDeclTail id e)) = do
+> postDecorateVarDecl (GramVarDeclType t id e) = do
 >   t <- convertGramType t
 >   e <- postDecorateExpr e
->   return $ GramVarDeclType t $ GramVarDeclTail id e
+>   return $ GramVarDeclType t id e
 
 > postDecorateFunDecl :: GramFuncDecl -> Environment GramFuncDecl
-> postDecorateFunDecl (GramFuncDecl id (GramFuncDeclTail fargs [GramFunTypeAnnot ftypes tret] stmts)) = do
+> postDecorateFunDecl (GramFuncDecl id fargs [GramFunTypeAnnot ftypes tret] stmts) = do
 >   stmts <- postDecorateBlock stmts
 >   ftypes <- convertFTypes ftypes
 >   tret <- convertRetType tret
 >   let funtype = GramFunTypeAnnot ftypes tret
->   return $ GramFuncDecl id $ GramFuncDeclTail fargs [funtype] stmts
+>   return $ GramFuncDecl id fargs [funtype] stmts
 >   where convertFTypes [] = return []
 >         convertFTypes (t:ftypes) = do
 >           t <- convertGramType t

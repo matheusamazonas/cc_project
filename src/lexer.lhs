@@ -64,19 +64,20 @@ column to 1 as well.
 
 > lexId :: SourcePos -> String -> PosToken
 > lexId p s
->   | s == "Int"     = (TokenType IntType, p)
->   | s == "Bool"    = (TokenType BoolType, p)
->   | s == "Char"    = (TokenType CharType, p)
->   | s == "Void"    = (TokenVoidType, p)
->   | s == "True"    = (TokenBool True, p)
->   | s == "False"   = (TokenBool False, p)
->   | s == "if"      = (TokenIf, p)
->   | s == "else"    = (TokenElse, p)
->   | s == "while"   = (TokenWhile, p)
->   | s == "var"     = (TokenVar, p)
->   | s == "return"  = (TokenReturn, p)
->   | s == "forall"  = (TokenForAll, p)
->   | otherwise      = (TokenId s, p)
+>   | s == "Int"      = (TokenType IntType, p)
+>   | s == "Bool"     = (TokenType BoolType, p)
+>   | s == "Char"     = (TokenType CharType, p)
+>   | s == "Void"     = (TokenVoidType, p)
+>   | s == "True"     = (TokenBool True, p)
+>   | s == "False"    = (TokenBool False, p)
+>   | s == "if"       = (TokenIf, p)
+>   | s == "else"     = (TokenElse, p)
+>   | s == "while"    = (TokenWhile, p)
+>   | s == "var"      = (TokenVar, p)
+>   | s == "return"   = (TokenReturn, p)
+>   | s == "forall"   = (TokenForAll, p)
+>   | s == "function" = (TokenFunction, p)
+>   | otherwise       = (TokenId s, p)
 
 > lexNum :: SourcePos -> String -> [PosToken]
 > lexNum p s = (TokenNum (read num), p) : lexer (incSourceColumn p (length num)) rest

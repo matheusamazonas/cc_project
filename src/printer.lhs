@@ -46,23 +46,20 @@
 > printDecl i (GramDeclVar vDecl) = printVarDecl i vDecl
 
 > printVarDecl :: Int -> GramVarDecl -> String
-> printVarDecl i (GramVarDeclType t declTail) = printType i False t ++ " " ++ printVarDeclTail 0 declTail
-> printVarDecl i (GramVarDeclVar declTail) = tb i ++ "var " ++ printVarDeclTail 0 declTail
+> printVarDecl i (GramVarDeclType t vId expr) = printType i False t ++ " " ++ printVarDeclTail 0 vId expr
+> printVarDecl i (GramVarDeclVar vId expr) = tb i ++ "var " ++ printVarDeclTail 0 vId expr
 
 > printFunDecl :: Int -> GramFuncDecl -> String
-> printFunDecl i (GramFuncDecl (Id _ s) declTail) = tb i ++ s ++ " " ++ printFuncDeclTail 0 declTail
-
-> printVarDeclTail :: Int -> GramVarDeclTail -> String
-> printVarDeclTail i (GramVarDeclTail (Id _ s) expr) = tb i ++ s ++ " = "++ printExpr 0 expr ++ ";\n"
-
-> printFuncDeclTail :: Int -> GramFuncDeclTail -> String
-> printFuncDeclTail i (GramFuncDeclTail args [] stmts) = 
->           tb i ++  "(" ++ printFArgs 0 args ++ ")\n{\n"
+> printFunDecl i (GramFuncDecl (Id _ s) args [] stmts) = tb i ++ s ++ " " 
+>           ++ tb i ++  "(" ++ printFArgs 0 args ++ ")\n{\n"
 >           ++ printMany printStmt 1 stmts ++ "}\n"
-> printFuncDeclTail i (GramFuncDeclTail args funTypes stmts) = 
->           tb i ++  "(" ++ printFArgs 0 args ++ ")"
->           ++ " :: " ++ printMany printFunType 0 funTypes ++ "\n{\n"
+> printFunDecl i (GramFuncDecl (Id _ s) args types stmts) = tb i ++ s ++ " " 
+>           ++ tb i ++  "(" ++ printFArgs 0 args ++ ")"
+>           ++ " :: " ++ printMany printFunType 0 types ++ "\n{\n"
 >           ++ printMany printStmt 1 stmts ++ "}\n"
+
+> printVarDeclTail :: Int -> GramId -> GramExp -> String
+> printVarDeclTail i (Id _ s) expr = tb i ++ s ++ " = "++ printExpr 0 expr ++ ";\n"
 
 > printRetType :: Int -> GramRetType -> String
 > printRetType i (GramRetType t) = printType i False t

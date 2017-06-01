@@ -65,20 +65,12 @@
 >   deriving (Show, Eq)   
 
 > data GramVarDecl = 
->      GramVarDeclType GramType GramVarDeclTail
->    | GramVarDeclVar GramVarDeclTail
->   deriving (Show, Eq)
-
-> data GramVarDeclTail = 
->      GramVarDeclTail GramId GramExp
->   deriving (Show, Eq)
-
-> data GramFuncDeclTail = 
->      GramFuncDeclTail [GramId] [GramFunTypeAnnot] [GramStmt]
+>      GramVarDeclType GramType GramId GramExp
+>    | GramVarDeclVar GramId GramExp
 >   deriving (Show, Eq)
 
 > data GramFuncDecl = 
->      GramFuncDecl GramId GramFuncDeclTail
+>      GramFuncDecl GramId [GramId] [GramFunTypeAnnot] [GramStmt]
 >   deriving (Show, Eq)
 
 > data GramDecl = 
