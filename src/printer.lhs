@@ -50,13 +50,13 @@
 > printVarDecl i (GramVarDeclVar vId expr) = tb i ++ "var " ++ printVarDeclTail 0 vId expr
 
 > printFunDecl :: Int -> GramFuncDecl -> String
-> printFunDecl i (GramFuncDecl (Id _ s) args [] stmts) = tb i ++ s ++ " " 
->           ++ tb i ++  "(" ++ printFArgs 0 args ++ ")\n{\n"
->           ++ printMany printStmt 1 stmts ++ "}\n"
-> printFunDecl i (GramFuncDecl (Id _ s) args types stmts) = tb i ++ s ++ " " 
->           ++ tb i ++  "(" ++ printFArgs 0 args ++ ")"
->           ++ " :: " ++ printMany printFunType 0 types ++ "\n{\n"
->           ++ printMany printStmt 1 stmts ++ "}\n"
+> printFunDecl i (GramFuncDecl (Id _ s) args [] stmts) = tb i ++ "function " ++ s ++ " " 
+>           ++ "(" ++ printFArgs 0 args ++ ")\n" ++ tb i ++ "{\n"
+>           ++ printMany printStmt (i+1) stmts ++ tb i ++ "}\n"
+> printFunDecl i (GramFuncDecl (Id _ s) args types stmts) = tb i ++ "function " ++ s ++ " " 
+>           ++ "(" ++ printFArgs 0 args ++ ")"
+>           ++ " :: " ++ printMany printFunType 0 types ++ "\n" ++ tb i ++ "{\n"
+>           ++ printMany printStmt (i+1) stmts ++ tb i ++ "}\n"
 
 > printVarDeclTail :: Int -> GramId -> GramExp -> String
 > printVarDeclTail i (Id _ s) expr = tb i ++ s ++ " = "++ printExpr 0 expr ++ ";\n"
@@ -97,6 +97,7 @@
 > printStmt i (GramFunVarDecl vardecl) = printVarDecl i vardecl
 > printStmt i (GramAttr _ var expr) = printAttr i var expr
 > printStmt i (GramStmtFunCall call) = printFuncall i call ++ ";\n"
+> printStmt i (GramStmtFuncDecl fundecl) = printFunDecl i fundecl
 
 > printIf :: Int -> GramExp -> [GramStmt] -> [GramStmt] -> String
 > printIf i expr ifS elseS = 

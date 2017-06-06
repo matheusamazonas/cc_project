@@ -393,6 +393,13 @@ A description of (mutual) deep skolemisation can be found in [1].
 >     checkTypePoly e tfield
 >     generalise [tfield]
 >     return (p, DoesNotReturn, GramAttr p (Var id fields) e)
+> inferStmt (GramStmtFuncDecl fundecl) texp = do -- let func = funcbody, same as global function declaration
+>   vfun <- inferFunDeclHeader fundecl
+>   fundecl <- inferFunDeclBody fundecl
+>   generalise [vfun]
+>   fundecl <- inferFunDeclPost fundecl
+>   return (getPos fundecl, DoesNotReturn, GramStmtFuncDecl fundecl)
+>   where getPos (GramFuncDecl (Id p _) _ _ _) = p
 > inferStmt (GramStmtFunCall funcall) texp = do -- return value is irrelevant, just type-check argument types
 >   v <- fresh
 >   (p,_,_,funcall) <- inferFunCall funcall $ Infer v
@@ -584,6 +591,9 @@ A description of (mutual) deep skolemisation can be found in [1].
 > postDecorateStmt (GramAttr p v e) = do
 >   e <- postDecorateExpr e
 >   return $ GramAttr p v e
+> postDecorateStmt (GramStmtFuncDecl fundecl) = do
+>   fundecl <- postDecorateFunDecl fundecl
+>   return $ GramStmtFuncDecl fundecl
 > postDecorateStmt (GramStmtFunCall funcall) = do
 >   (_,_,_,funcall) <- postDecorateFunCall funcall
 >   return $ GramStmtFunCall funcall
