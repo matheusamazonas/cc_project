@@ -47,6 +47,8 @@ This consists of the following major stages:
 1. Dependency analysis
 See dependency.lhs. This provides definition order independence and 
 divides the tree into mutually recursive blocks.
+It is part of the type checker, but it is called in main.lhs 
+so that the type checker does not need to needlessly propagate captures.
 
 2. Block-wise type inference and initial tree decoration
 Applied per mutually recursive block, and divided into the following stages:
@@ -99,9 +101,8 @@ Called with inferProg, returning only the decorated tree.
  Top-level structure
 ===============================================================================
 
-> inferProg :: [GramDecl] -> Either TypeError [GramDecl]
-> inferProg decls =
->   let declBlocks = Dependency.dependencyBlocks decls in
+> inferProg :: [[GramDecl]] -> Either TypeError [GramDecl]
+> inferProg declBlocks =
 >   case runStateT (addErrorDesc "[TYPE ERROR] " $ inference declBlocks) initEnv of
 >     Left e             -> Left e
 >     Right (annot, env) -> Right annot

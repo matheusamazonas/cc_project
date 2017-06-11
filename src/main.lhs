@@ -1,5 +1,6 @@
 > module Main where
 
+> import Dependency (dependencyAnalysis)
 > import Lexer (lexer)
 > import Parser (parseTokens)
 > import PolyChecker (inferProg)
@@ -24,7 +25,8 @@
 >   case ast of
 >     Left e -> do putStrLn $ show e; return ""
 >     Right ast -> do
->       let i = inferProg ast
+>       let (astBlocks, captures) = dependencyAnalysis decls in
+>       let i = inferProg astBlocks
 >       case i of
 >         Left e -> do putStrLn $ show e; return ""
 >         Right aast -> do

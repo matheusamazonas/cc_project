@@ -5,6 +5,7 @@
 > import Control.Monad.Writer (WriterT, tell, execWriterT)
 > import Data.Char (ord)
 > import Data.List (genericLength, isPrefixOf, nub)
+> import Dependency (Capture)
 > import Grammar
 > import Token
 
@@ -24,13 +25,13 @@ Code generation
 Call with, e.g., run generateStmtBlock stmts, with stmts :: [GramStmt]
 Once implemented, generate = run generateProgram
 
-> generate :: Gram -> Code
-> generate = postprocess . run generateProgram 
+> generate :: [Capture] -> Gram -> Code
+> generate capts prog = postprocess $ run (generateProgram capts) prog
 
-> generateProgram :: Gram -> Environment ()
-> generateProgram g = do 
+> generateProgram :: [Capture] -> Gram -> Environment ()
+> generateProgram capts prog = do 
 >   write "bra __init"
->   let (globals, funcs) = sepDecls g
+>   let (globals, funcs) = sepDecls prog
 >   sequence_ $ map addGlobalFunc builtinNames
 >   sequence_ $ map (addGlobal . getVarId . GramDeclVar) globals
 >   sequence_ $ map (addGlobalFunc . getVarId . GramDeclFun) funcs
@@ -572,6 +573,18 @@ Variable handlers
 >           case lookup varId v of
 >             Nothing -> lookupVar' varId vs
 >             Just d -> d
+
+
+Capture handlers
+
+data Capture = Capture GramId [VarId] [Capture]
+
+> getCapture :: [Capture] -> GramId -> Capture
+> getCapture capts fid = capt
+>   where matchId fid (Capture cid _ _) = fid == cid
+>         Just capt = find (matchId fid) capts
+
+
 
 
 Label handlers
