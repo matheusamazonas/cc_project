@@ -308,11 +308,12 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >   write "stmh 2\nstmh 2"
 > typeFrame (GramIdType (Id _ id))
 >   | isPrefixOf "_t" id || isPrefixOf "_v" id = do
->     (load, store) <- lookupVar $ "__tf_" ++ drop 2 id
->     write $ repl load
+>     (tfload, _) <- lookupVar "__tf"
+>     (typeload, _) <- lookupVar $ "__tf_" ++ drop 2 id
+>     write $ loadTF tfload typeload
 >   | otherwise = write "bra __exc_unknown_error"
->   where repl "bra __exc_unknown_error" = "ldc 13\nldc 0\nstmh 2"
->         repl c = c
+>   where loadTF _ "bra __exc_unknown_error" = "ldc 13\nldc 0\nstmh 2"
+>         loadTF tfload typeload = tfload ++ (unlines $ tail $ lines $ typeload)
 
 > functionTypeFrame :: [GramType] -> Environment ()
 > functionTypeFrame [t] = typeFrame t
@@ -324,6 +325,7 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 
 > addTypeFrameArgs :: Int -> [GramType] -> Environment Bool
 > addTypeFrameArgs locali ts = do
+>   addArg "__tf" $ toInteger (-2-locali)
 >   let freeIds = nub $ concat $ map freeTypeVars ts
 >   addTypeFrameArgs' locali (length freeIds) 0 freeIds
 >   return $ not $ null freeIds
@@ -336,7 +338,7 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >         addTypeFrameArg locali numFrames i id = do
 >           (((d,v):ss), nxt) <- get
 >           let fid = "__tf_" ++ id
->           let loadIns = removeFinalNewline $ "ldl -" ++ show (2+locali) ++ "\n" ++ getTypeFrame numFrames i
+>           let loadIns = removeFinalNewline $ "bra __exc_unknown_error\n" ++ getTypeFrame numFrames i
 >           let storeIns = "bra __exc_unknown_error"
 >           put ((d,(fid, (loadIns, storeIns)):v):ss, nxt)
 >         freeTypeVars (GramIdType (Id _ id)) 
