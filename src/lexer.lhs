@@ -19,15 +19,19 @@ column to 1 as well.
 > lexer _ [] = []
 > lexer p ('/':'/':xs) = lexSkipLine (incSourceColumn p 2) xs
 > lexer p ('/':'*':xs) = lexSkipBlock (incSourceColumn p 2) xs
-> lexer p (x:xs)
->   | x == '\n' = lexer (incLine p) xs 
->   | x == '\t' = lexer (incSourceColumn p 4) xs 
->   | isSpace x = lexer (incSourceColumn p 1) xs 
+> lexer p ('\n':xs) = lexer (incLine p) xs 
+> lexer p ('\t':xs) = lexer (incSourceColumn p 4) xs 
+> lexer p (x:xs)    
+>   | isSpace x = lexer (incSourceColumn p 1) xs
 >   | isAlpha x = lexText p (x:xs)
 >   | isDigit x = lexNum p (x:xs)
+> lexer p ('"':s) = lexStringLit p lit ++ lexer pos rest
+>   where
+>     (lit, (_:rest)) = span (/= '\"') s
+>     pos = (incSourceColumn p (2 + 2 * length lit))
 > lexer p ('\'':'\\':'n':'\'':xs) = (TokenChar  '\n', p)          : lexer (incSourceColumn p 4) xs
 > lexer p ('\'':'\\':'t':'\'':xs) = (TokenChar  '\t', p)          : lexer (incSourceColumn p 4) xs
-> lexer p ('\'':c:'\'':xs)        = (TokenChar c, p)              : lexer (incSourceColumn p 3) xs
+> lexer p ('\'':c:'\'':xs)        = (TokenChar c, p)              : lexer (incSourceColumn p 3) xs                 
 > lexer p ('<':'=':xs)            = (TokenOp LessOrEqual, p)      : lexer (incSourceColumn p 2) xs
 > lexer p ('>':'=':xs)            = (TokenOp GreaterOrEqual, p)   : lexer (incSourceColumn p 2) xs
 > lexer p ('=':'=':xs)            = (TokenOp Equals, p)           : lexer (incSourceColumn p 2) xs
@@ -56,6 +60,20 @@ column to 1 as well.
 > lexer p ('.':xs)                = (TokenPeriod, p)              : lexer (incSourceColumn p 1) xs
 > lexer p (',':xs)                = (TokenComma , p)              : lexer (incSourceColumn p 1) xs
 > lexer p xs                      = error $ "Lexer error at " ++ show p
+
+> listConst :: SourcePos -> PosToken
+> listConst p = (TokenOp ListConst, incSourceColumn p 1)
+
+> lexStringLit :: SourcePos -> String -> [PosToken]
+> lexStringLit p [] = [openSquareB, closeSquareB]
+>   where
+>     openSquareB = (TokenOpenSquareB, incSourceColumn p 2)
+>     closeSquareB = (TokenCloseSquareB, incSourceColumn p 3)
+> lexStringLit p ('\\':'n':cs) = (TokenChar '\n', p) : listConst p : lexStringLit p cs
+> lexStringLit p ('\\':'t':cs) = (TokenChar '\t', p) : listConst p : lexStringLit p cs
+> lexStringLit p ('\\':'\"':cs) = (TokenChar '\"', p) : listConst p : lexStringLit p cs
+> lexStringLit p (c:cs) = (TokenChar c, p) : listConst p : lexStringLit p cs
+
 
 > lexText :: SourcePos -> String -> [PosToken]
 > lexText p s = lexId p id : lexer (incSourceColumn p (length id)) rest
