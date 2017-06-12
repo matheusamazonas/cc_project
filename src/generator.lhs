@@ -31,8 +31,8 @@ Once implemented, generate = run generateProgram
 >   | hasMain g = pure $ postprocess $ run (generateProgram capts) g
 >   | otherwise = Left "Program doesn't cointain main()"
 
-> generateProgram :: Gram -> Environment ()
-> generateProgram g = do 
+> generateProgram :: [Capture] -> Gram -> Environment ()
+> generateProgram capts g = do 
 >   write "bra __init"
 >   let (globals, funcs) = sepDecls g
 >   sequence_ $ map addGlobalFunc builtinNames
@@ -101,11 +101,14 @@ Once implemented, generate = run generateProgram
 >   addArg "__env" $ decrIfTrue isPoly argCounter
 >   addArgs args
 >   mapM_ (captureIfNeeded capt) args
+>   pushScope
 >   lams <- generateStmtBlock capt stmts
 >   case getFuncReturnType types of
 >     (GramVoidType _) -> if funId == "main" then write "halt" else write "unlink\nret"
 >     otherwise -> do return ()
 >   sequence_ lams
+>   popScope
+>   popScope
 >   where getArgTypes [GramFunTypeAnnot ftypes _] = ftypes
 >         decrIfTrue True x = toInteger $ x-1
 >         decrIfTrue _    x = toInteger x
@@ -128,16 +131,11 @@ Once implemented, generate = run generateProgram
 >   write $ "jsr\najs " ++ show (-1-length args) 
 
 > generateStmtBlock :: Capture -> [GramStmt] -> Environment [Environment ()]
-> generateStmtBlock capt stmts = do
->   pushScope
->   generateStmtBlock' capt stmts
->   where generateStmtBlock' capt [] = do
->           popScope
->           return []
->         generateStmtBlock' capt (stmt:stmts) = do
->           lam <- generateStmt capt stmt
->           lams <- generateStmtBlock' capt stmts
->           return $ lam ++ lams
+> generateStmtBlock capt [] = return []
+> generateStmtBlock capt (stmt:stmts) = do
+>   lam <- generateStmt capt stmt
+>   lams <- generateStmtBlock capt stmts
+>   return $ lam ++ lams
 
 > generateStmt :: Capture -> GramStmt -> Environment [Environment ()]
 > generateStmt capt (GramWhile _ expr stmts) = do
@@ -146,7 +144,9 @@ Once implemented, generate = run generateProgram
 >   label wStart
 >   generateExpr expr
 >   write $ "brf " ++ wEnd
+>   pushScope
 >   lams <- generateStmtBlock capt stmts
+>   popScope
 >   write $ "bra " ++ wStart
 >   label wEnd
 >   return lams
@@ -156,10 +156,14 @@ Once implemented, generate = run generateProgram
 >   labelFi <- genLabel "fi"
 >   generateExpr expr
 >   write $ "brf " ++ labelElse
+>   pushScope
 >   trlams <- generateStmtBlock capt thenStmts 
+>   popScope
 >   write $ "bra " ++ labelFi
 >   label labelElse 
+>   pushScope
 >   falams <- generateStmtBlock capt elseStmts
+>   popScope
 >   label labelFi
 >   return $ trlams ++ falams
 > generateStmt capt (GramReturn _ (Nothing)) = do
