@@ -3,8 +3,8 @@
 > import Control.Monad
 > import Control.Monad.State
 > import Control.Monad.Writer (WriterT, tell, execWriterT)
-> import Data.Char (ord)
-> import Data.List (find, genericLength, intersect, isPrefixOf, nub)
+> import Data.Char (ord, digitToInt)
+> import Data.List ((!!), find, genericLength, intersect, isPrefixOf, nub)
 > import Dependency (Capture(..))
 > import Grammar
 > import Text.Parsec.Pos (sourceLine, sourceColumn)
@@ -94,10 +94,11 @@ Once implemented, generate = run generateProgram
 >   addArg "__env" $ decrIfTrue isPoly argCounter
 >   addArgs args
 >   mapM_ (captureIfNeeded capt) args
->   generateStmtBlock capt stmts
+>   lams <- generateStmtBlock capt stmts
 >   case getFuncReturnType types of
 >     (GramVoidType _) -> if funId == "main" then write "halt" else write "unlink\nret"
 >     otherwise -> do return ()
+>   sequence_ lams
 >   where getArgTypes [GramFunTypeAnnot ftypes _] = ftypes
 >         decrIfTrue True x = toInteger $ x-1
 >         decrIfTrue _    x = toInteger x
@@ -105,30 +106,31 @@ Once implemented, generate = run generateProgram
 > generateFunCall :: GramFunCall -> Environment ()
 > generateFunCall (GramOverloadedFunCall ts (Id _ funId) args) = do
 >   (load, _) <- lookupVar funId
->   write load
->   write "ldh 0" -- load environment
+>   write $ fixHeapFunctionCalls $ load ++ "\nldh 0" -- load environment
 >   functionTypeFrame ts
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
->   write load -- actual function label
->   write $ "ldh -1\njsr\najs " ++ show (-2-length args) 
+>   write $ fixHeapFunctionCalls $ load ++ "\nldh -1" -- actual function label
+>   write $ "jsr\najs " ++ show (-2-length args) 
 > generateFunCall (GramFunCall (Id _ funId) args) = do
 >   (load, _) <- lookupVar funId
->   write load
->   write "ldh 0" -- load environment
+>   write $ fixHeapFunctionCalls $ load ++ "\nldh 0" -- load environment
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
->   write load
->   write $ "ldh -1\njsr\najs " ++ show (-1-length args) 
+>   write $ fixHeapFunctionCalls $ load ++ "\nldh -1" -- actual function label
+>   write $ "jsr\najs " ++ show (-1-length args) 
 
-> generateStmtBlock :: Capture -> [GramStmt] -> Environment ()
+> generateStmtBlock :: Capture -> [GramStmt] -> Environment [Environment ()]
 > generateStmtBlock capt stmts = do
 >   pushScope
 >   generateStmtBlock' capt stmts
->   where generateStmtBlock' capt [] = popScope
+>   where generateStmtBlock' capt [] = do
+>           popScope
+>           return []
 >         generateStmtBlock' capt (stmt:stmts) = do
->           generateStmt capt stmt
->           generateStmtBlock' capt stmts
+>           lam <- generateStmt capt stmt
+>           lams <- generateStmtBlock' capt stmts
+>           return $ lam ++ lams
 
 > generateStmt :: Capture -> GramStmt -> Environment [Environment ()]
 > generateStmt capt (GramWhile _ expr stmts) = do
@@ -137,22 +139,22 @@ Once implemented, generate = run generateProgram
 >   label wStart
 >   generateExpr expr
 >   write $ "brf " ++ wEnd
->   generateStmtBlock capt stmts
+>   lams <- generateStmtBlock capt stmts
 >   write $ "bra " ++ wStart
 >   label wEnd
->   return []
+>   return lams
 > generateStmt capt (GramIf _ expr thenStmts elseStmts) = do
 >   labelElse <- genLabel "else"
 >   labelIf <- genLabel "if"
 >   labelFi <- genLabel "fi"
 >   generateExpr expr
 >   write $ "brf " ++ labelElse
->   generateStmtBlock capt thenStmts 
+>   trlams <- generateStmtBlock capt thenStmts 
 >   write $ "bra " ++ labelFi
 >   label labelElse 
->   generateStmtBlock capt elseStmts
+>   falams <- generateStmtBlock capt elseStmts
 >   label labelFi
->   return []
+>   return $ trlams ++ falams
 > generateStmt capt (GramReturn _ (Nothing)) = do
 >   write "unlink\nret"
 >   return []
@@ -187,9 +189,11 @@ Once implemented, generate = run generateProgram
 >   functionEnvironment nestedcapts fid
 >   write "stmh 2"
 >   addVar funId
->   return [generateFunDecl nestedcapts lambdaDecl]
+>   return [generateFunDecl lambdaCapts lambdaDecl]
 >   where lambdaDecl = GramFuncDecl (Id p lambdaName) args annot stmts
 >         lambdaName = "_lambda_l" ++ (show $ sourceLine p) ++ "c" ++ (show $ sourceColumn p) ++ "_" ++ funId
+>         (Capture (Id np _) ncaptured nnestedcapts) = getCapture nestedcapts fid
+>         lambdaCapts = [Capture (Id np lambdaName) ncaptured nnestedcapts]
 
 
 > generateExpr :: GramExp -> Environment ()
@@ -533,6 +537,13 @@ Post-processing
 >           | otherwise = ln
 >         subbedInstructions = ["bra ", "brf ", "brt ", "bsr ", "ldc "]
 
+> fixHeapFunctionCalls :: Code -> Code
+> fixHeapFunctionCalls load = let lns = lines load in unlines $ fixHeapFunctionCalls' lns
+>   where fixHeapFunctionCalls' lns 
+>           | length lns >= 4 && (last $ init lns) == "stmh 2" && isPrefixOf "ldh " (last lns) =
+>             let ind = length lns - 3 - (digitToInt $ last $ last lns) in
+>               (take (length lns - 4) lns) ++ [lns !! ind]
+>           | otherwise = lns
 
 
 Scope handlers
@@ -634,13 +645,20 @@ data Capture = Capture GramId [GramId] [Capture]
 >         functionEnvironment' (Capture _ captured _) = functionEnvironment'' captured
 >         functionEnvironment'' [Id _ vid] = do
 >           (load,_) <- lookupVar vid
->           write load
+>           write $ addressOf load
 >         functionEnvironment'' captured = do
 >           let (l, r) = splitAt ((length captured + 1) `div` 2) captured
 >           functionEnvironment'' l
 >           functionEnvironment'' r
 >           write "stmh 2"
 
+> addressOf :: String -> String
+> addressOf load = let lns = lines load in addressOf' lns
+>   where addressOf' lns 
+>           | length lns <= 2 && (isPrefixOf "ldl " $ head lns) = "ldla" ++ (drop 3 $ head lns)
+>           | length lns >= 4 && (last $ init lns) == "stmh 2" && isPrefixOf "ldh " (last lns) =
+>             error $ "test error: addressOf encountered unexpected input: " ++ unlines lns
+>           | otherwise = error $ unlines lns
 
 
 Label handlers

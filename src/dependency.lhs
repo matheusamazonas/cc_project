@@ -6,6 +6,7 @@
 
 > type VariableScopes = [[[GramId]]] -- three levels deep to be able to distinguish between within-function blocks and nested functions
 > data Capture = Capture GramId [GramId] [Capture] -- Capture FunctionName NamesOfVariablesCapturedByMe NestedFunctionCaptures
+>   deriving (Show)
 
 ===============================================================================
 ===============================================================================
