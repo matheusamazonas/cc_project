@@ -10,7 +10,7 @@
 > import Text.Parsec.Pos (sourceLine, sourceColumn)
 > import Token
 
-
+> type GeneratorError = String
 > type Depth = Integer
 > type Id = String
 > type Code = String
@@ -26,13 +26,15 @@ Code generation
 Call with, e.g., run generateStmtBlock stmts, with stmts :: [GramStmt]
 Once implemented, generate = run generateProgram
 
-> generate :: [Capture] -> Gram -> Code
-> generate capts prog = postprocess $ run (generateProgram capts) prog
+> generate :: [Capture] -> Gram -> Either GeneratorError Code
+> generate capts g
+>   | hasMain g = pure $ postprocess $ run (generateProgram capts) g
+>   | otherwise = Left "Program doesn't cointain main()"
 
-> generateProgram :: [Capture] -> Gram -> Environment ()
-> generateProgram capts prog = do 
+> generateProgram :: Gram -> Environment ()
+> generateProgram g = do 
 >   write "bra __init"
->   let (globals, funcs) = sepDecls prog
+>   let (globals, funcs) = sepDecls g
 >   sequence_ $ map addGlobalFunc builtinNames
 >   sequence_ $ map (addGlobal . getVarId . GramDeclVar) globals
 >   sequence_ $ map (addGlobalFunc . getVarId . GramDeclFun) funcs
@@ -52,6 +54,11 @@ Once implemented, generate = run generateProgram
 > sepDecls ((GramDeclFun d):ds) = (vars, d:funcs)
 >   where
 >     (vars, funcs) = sepDecls ds
+
+> hasMain :: Gram -> Bool
+> hasMain [] = False
+> hasMain (GramDeclFun (GramFuncDecl (Id _ "main") []  [GramFunTypeAnnot [] (GramVoidType _)] _) : fs) = True
+> hasMain (_:ds) = hasMain ds
 
 > getVarId :: GramDecl -> String
 > getVarId (GramDeclVar (GramVarDeclType _ (Id _ varId) _)) = varId

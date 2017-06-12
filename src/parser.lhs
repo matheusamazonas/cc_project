@@ -4,6 +4,7 @@
 > import Text.Parsec.Pos (SourcePos, newPos)
 > import Text.Parsec.Error (ParseError)
 > import Text.Parsec.Combinator (optional, optionMaybe, many1, chainl1, chainl, sepEndBy, sepBy, eof)
+> import Text.Parsec.Error (showErrorMessages, Message)
 > import Control.Monad (void)
 > import Control.Applicative ((<$>))
 > import Data.Maybe (maybeToList)
@@ -12,6 +13,9 @@
 > import Token
 
 > type MyParser a = GenParser PosToken () a
+
+> showParsingErrors :: [Message] -> String
+> showParsingErrors es = showErrorMessages "or" "unknown parse error" "expecting" "unexpected" "end of input" es
 
 Advance and satisfy were based on code from 
 from http://osa1.net/posts/2012-08-30-separating-lexing-and-parsing-in-parsec.html
@@ -372,7 +376,7 @@ field isn't one of the reserved ones, it throwns an error.
 >         opt <- optionMaybe pField
 >         let field = maybeToList opt in
 >           return $ constructor field
->       Nothing -> error "Invalid field"
+>       Nothing -> fail "Invalid field"
 
 This parser is self-explanatory.
 
@@ -467,7 +471,7 @@ We need a function to take a GramID (String) out of a getTypeId because
 
 > getTypeId :: GramType -> GramId
 > getTypeId (GramIdType i) = i
-> getTypeId _ = error "PArser error: getTypeId is supposed to work ony on GramTypeId"
+> getTypeId _ = error "Parser error: getTypeId is supposed to work ony on GramTypeId"
 
 Parses a Grammar Declaration. Declarations can be either variable or function
 declarations. 

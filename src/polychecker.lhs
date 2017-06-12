@@ -116,7 +116,7 @@ test more complicated ones than this
 
 > inferProg :: [[GramDecl]] -> Either TypeError [GramDecl]
 > inferProg declBlocks =
->   case runStateT (addErrorDesc "[TYPE ERROR] " $ inference declBlocks) initEnv of
+>   case runStateT (inference declBlocks) initEnv of
 >     Left e             -> Left e
 >     Right (annot, env) -> Right annot
 >   where inference :: [[GramDecl]] -> Environment [GramDecl]
