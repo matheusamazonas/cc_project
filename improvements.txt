@@ -19,3 +19,4 @@ Possible little improvements:
 - string literals (convert "lol" into 'l':'o':'l':[])
 - list literals (write [1,2,3] instead of 1:2:3:[])
 - for loops (convert to while loop in code gen)
+- a way to output strings/characters without surrounding " and ' (output? display?)
