@@ -102,7 +102,7 @@ Called with inferProg, returning only the decorated tree.
 > inferProg :: [GramDecl] -> Either TypeError [GramDecl]
 > inferProg decls =
 >   let declBlocks = Dependency.dependencyBlocks decls in
->   case runStateT (addErrorDesc "[TYPE ERROR] " $ inference declBlocks) initEnv of
+>   case runStateT (addErrorDesc "" $ inference declBlocks) initEnv of
 >     Left e             -> Left e
 >     Right (annot, env) -> Right annot
 >   where inference :: [[GramDecl]] -> Environment [GramDecl]

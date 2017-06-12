@@ -3,10 +3,7 @@ Extension:
 - possibly: lambda expressions (if so, look at closures and value restriction online)
 
 Desirable little improvements:
-- graceful error when no main available
-- graceful lexer error
 - test error when print, equals etc. used on functions
-- prepend e.g. "[PARSE ERROR]" to parsing errors, etc.
 
 Bigger improvements:
 - only include actually-used parts of the standard library 
@@ -16,6 +13,6 @@ Bigger improvements:
 - type check error function
 
 Possible little improvements:
-- string literals (convert "lol" into 'l':'o':'l':[])
+- string literals inside string literals "example: \"literal\" here"
 - list literals (write [1,2,3] instead of 1:2:3:[])
 - for loops (convert to while loop in code gen)

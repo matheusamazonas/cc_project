@@ -1,10 +1,16 @@
 > {-# LANGUAGE UnicodeSyntax #-}
-> module Printer (prettyPrint, printGram) where
+> module Printer (printGram) where
 
 > import Grammar
 > import Lexer
-> import Test
 > import Token
+> import Parser (pSPL, showParsingErrors)
+> import Text.Parsec.Combinator (eof)
+> import Text.ParserCombinators.Parsec.Prim (parse)
+> import Text.Parsec.Error (errorPos, errorMessages)
+> import Text.Parsec.Pos (newPos)
+
+> nP = newPos "test" 1 1
 
 > tb :: Int -> String
 > tb n = replicate n '\t'
@@ -12,10 +18,17 @@
 > printMany :: (Int -> a -> String) -> Int -> [a] -> String
 > printMany f i xs = concat $ map (f i) xs
 
-> prettyPrint :: String -> IO()
-> prettyPrint s = putStrLn $ printGram tree
->   where 
->     (Right tree) = parseSPL $ lexer nP s
+> prettyPrint :: String -> IO ()
+> prettyPrint s = case lexer nP s of
+>     Left (e, p) -> do 
+>       putStrLn $ "Lexer error: " ++ e ++ "\n\tat " ++ show p
+>     Right tokens -> do
+>       case parse (pSPL <* eof) "test" tokens of
+>         Left e -> do 
+>           putStrLn $ "Parser error: " ++ showParsingErrors (errorMessages e)
+>           putStrLn $ "\tat " ++ show (errorPos e)
+>         Right tree -> do
+>           putStrLn $ printGram tree
 
 > printVar :: Int -> GramVar -> String
 > printVar i (Var (Id _ varId) fields) = 

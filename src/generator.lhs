@@ -8,7 +8,7 @@
 > import Grammar
 > import Token
 
-
+> type GeneratorError = String
 > type Depth = Integer
 > type Id = String
 > type Code = String
@@ -24,13 +24,15 @@ Code generation
 Call with, e.g., run generateStmtBlock stmts, with stmts :: [GramStmt]
 Once implemented, generate = run generateProgram
 
-> generate :: Gram -> Code
-> generate = postprocess . run generateProgram 
+> generate :: Gram -> Either GeneratorError Code
+> generate g
+>   | checkMain g = pure $ postprocess $ run generateProgram g
+>   | otherwise = Left "Program doesn't cointain main()"
 
 > generateProgram :: Gram -> Environment ()
 > generateProgram g = do 
->   write "bra __init"
 >   let (globals, funcs) = sepDecls g
+>   write "bra __init"
 >   sequence_ $ map addGlobalFunc builtinNames
 >   sequence_ $ map (addGlobal . getVarId . GramDeclVar) globals
 >   sequence_ $ map (addGlobalFunc . getVarId . GramDeclFun) funcs
@@ -50,6 +52,11 @@ Once implemented, generate = run generateProgram
 > sepDecls ((GramDeclFun d):ds) = (vars, d:funcs)
 >   where
 >     (vars, funcs) = sepDecls ds
+
+> checkMain :: Gram -> Bool
+> checkMain [] = False
+> checkMain (GramDeclFun (GramFuncDecl (Id _ "main") []  [GramFunTypeAnnot [] (GramVoidType _)] _) : fs) = True
+> checkMain (_:ds) = checkMain ds
 
 > getVarId :: GramDecl -> String
 > getVarId (GramDeclVar (GramVarDeclType _ (Id _ varId) _)) = varId

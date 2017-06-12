@@ -1,7 +1,7 @@
 > module Main where
 
 > import Lexer (lexer)
-> import Parser (parseTokens)
+> import Parser (parseTokens, showParsingErrors)
 > import PolyChecker (inferProg)
 > import Generator (generate)
 > import System.IO
@@ -9,26 +9,76 @@
 > import System.Process (system)
 > import Text.Parsec.Pos (newPos)
 > import System.FilePath.Posix (dropExtension)
+> import Text.Parsec.Error (errorPos, errorMessages)
 > import GHC.IO.Exception (ExitCode)
 
 > usage = "Usage: main [mode] [source path]\nModes:\n\tc (compile)\n\tm (make)\n\tx (execute)\n\td (debug)"
 
-> execute :: FilePath -> IO ExitCode
-> execute fileName = system $ "java -jar ../ssm/ssm.jar --cli --file " ++ fileName
+> runExecutable :: FilePath -> IO ExitCode
+> runExecutable fileName = system $ "java -jar ../ssm/ssm.jar --cli --file " ++ fileName
 
-> compile :: FilePath -> FilePath -> IO String
-> compile sourceName ssmName = do
+> compileFile :: FilePath -> FilePath -> IO (Maybe String)
+> compileFile sourceName ssmName = do
 >   content <- readFile sourceName
 >   let pos = newPos sourceName 1 1
->   let ast = parseTokens sourceName $ lexer pos content
->   case ast of
->     Left e -> do putStrLn $ show e; return ""
->     Right ast -> do
->       let i = inferProg ast
->       case i of
->         Left e -> do putStrLn $ show e; return ""
->         Right aast -> do
->           return $ generate aast
+>   case lexer pos content of
+>     Left (e, p) -> do 
+>       putStrLn $ "Lexer error: " ++ e ++ "\n\tat " ++ show p
+>       return Nothing
+>     Right ts -> do
+>       case parseTokens sourceName ts of
+>         Left e -> do 
+>           putStrLn $ "Parser error: " ++ showParsingErrors (errorMessages e)
+>           putStrLn $ "\tat " ++ show (errorPos e)
+>           return Nothing
+>         Right ast -> do
+>           let i = inferProg ast
+>           case inferProg ast of
+>             Left (e, p) -> do 
+>               putStrLn $ "Type error: " ++ e ++ "\n\tat " ++ show p
+>               return Nothing
+>             Right aast -> do
+>               case generate aast of
+>                 Left e -> do 
+>                   putStrLn $ "Generator error: " ++ e
+>                   return Nothing
+>                 Right code -> return $ Just code
+
+> compile :: String -> String -> Maybe String -> IO ()
+> compile ssmName sourceName result = do
+>   case result of
+>     Just code -> do
+>       putStrLn $ "Code:\n" ++ code
+>       putStrLn code
+>     Nothing -> return ()
+
+> make :: String -> String -> Maybe String -> IO ()
+> make ssmName sourceName result = do
+>   case result of
+>     Just code -> do
+>       writeFile ssmName code
+>     Nothing -> return ()
+
+> execute :: String -> String -> Maybe String -> IO ()
+> execute ssmName sourceName result = do
+>   case result of
+>     Just code -> do
+>       writeFile ssmName code
+>       putStrLn $ "Execution:" 
+>       runExecutable ssmName
+>       return ()
+>     Nothing -> return ()
+
+> debug :: String -> String -> Maybe String -> IO ()
+> debug ssmName sourceName result = do
+>   case result of
+>     Just code -> do
+>       putStrLn $ "Code:\n" ++ code
+>       writeFile ssmName code
+>       putStrLn $ "Execution:" 
+>       runExecutable ssmName
+>       return ()
+>     Nothing -> return ()
 
 > main :: IO ()
 > main = do
@@ -39,27 +89,12 @@
 >     let mode = head args
 >     let sourceName = args !! 1
 >     let ssmName = (dropExtension sourceName) ++ ".ssm"
+>     compResult <- compileFile sourceName ssmName
 >     case mode of
->       "c" -> do
->         source <- compile sourceName ssmName
->         putStrLn $ "Code:\n" ++ source
->         putStrLn source
->       "m" -> do
->         source <- compile sourceName ssmName
->         writeFile ssmName source
->       "x" -> do
->         source <- compile sourceName ssmName
->         writeFile ssmName source
->         putStrLn $ "Execution:" 
->         execute ssmName
->         return ()
->       "d" -> do
->         source <- compile sourceName ssmName
->         putStrLn $ "Code:\n" ++ source
->         writeFile ssmName source
->         putStrLn $ "Execution:" 
->         execute ssmName
->         return ()
+>       "c" -> compile ssmName sourceName compResult
+>       "m" -> make ssmName sourceName compResult
+>       "x" -> execute ssmName sourceName compResult
+>       "d" -> debug ssmName sourceName compResult
 >       otherwise -> putStrLn $ "Invalid mode\n" ++ usage
 
 
