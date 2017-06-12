@@ -25,12 +25,12 @@
 >   case ast of
 >     Left e -> do putStrLn $ show e; return ""
 >     Right ast -> do
->       let (astBlocks, captures) = dependencyAnalysis decls in
+>       let (astBlocks, captures) = dependencyAnalysis ast
 >       let i = inferProg astBlocks
 >       case i of
 >         Left e -> do putStrLn $ show e; return ""
 >         Right aast -> do
->           return $ generate aast
+>           return $ generate captures aast
 
 > main :: IO ()
 > main = do

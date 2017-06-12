@@ -4,9 +4,10 @@
 > import Control.Monad.State
 > import Control.Monad.Writer (WriterT, tell, execWriterT)
 > import Data.Char (ord)
-> import Data.List (genericLength, isPrefixOf, nub)
-> import Dependency (Capture)
+> import Data.List (find, genericLength, intersect, isPrefixOf, nub)
+> import Dependency (Capture(..))
 > import Grammar
+> import Text.Parsec.Pos (sourceLine, sourceColumn)
 > import Token
 
 
@@ -36,7 +37,7 @@ Once implemented, generate = run generateProgram
 >   sequence_ $ map (addGlobal . getVarId . GramDeclVar) globals
 >   sequence_ $ map (addGlobalFunc . getVarId . GramDeclFun) funcs
 >   sequence_ $ replicate (length globals) $ write "nop"
->   sequence_ $ map generateFunDecl funcs
+>   sequence_ $ map (generateFunDecl capts) funcs
 >   write "\n; initialise global variables"
 >   label "__init"
 >   sequence_ $ map generateVariable globals
@@ -81,8 +82,9 @@ Once implemented, generate = run generateProgram
 > getFuncReturnType :: [GramFunTypeAnnot] -> GramRetType
 > getFuncReturnType ((GramFunTypeAnnot _ ret):_) = ret
 
-> generateFunDecl :: GramFuncDecl -> Environment ()
-> generateFunDecl (GramFuncDecl (Id _ funId) args types stmts) = do
+> generateFunDecl :: [Capture] -> GramFuncDecl -> Environment ()
+> generateFunDecl capts (GramFuncDecl id@(Id _ funId) args types stmts) = do
+>   let capt = getCapture capts id
 >   write $ "\n; define function " ++ funId
 >   pushScope
 >   label funId
@@ -91,21 +93,14 @@ Once implemented, generate = run generateProgram
 >   isPoly <- addTypeFrameArgs argCounter $ getArgTypes types
 >   addArg "__env" $ decrIfTrue isPoly argCounter
 >   addArgs args
->   generateStmtBlock stmts
+>   mapM_ (captureIfNeeded capt) args
+>   generateStmtBlock capt stmts
 >   case getFuncReturnType types of
 >     (GramVoidType _) -> if funId == "main" then write "halt" else write "unlink\nret"
 >     otherwise -> do return ()
 >   where getArgTypes [GramFunTypeAnnot ftypes _] = ftypes
 >         decrIfTrue True x = toInteger $ x-1
 >         decrIfTrue _    x = toInteger x
-
-> genVarDecl :: GramVarDecl -> Environment ()
-> genVarDecl (GramVarDeclType varType (Id _ varId) expr) = do
->   addVar varId
->   generateExpr expr
-> genVarDecl (GramVarDeclVar (Id _ varId) expr) = do
->   addVar varId
->   generateExpr expr
 
 > generateFunCall :: GramFunCall -> Environment ()
 > generateFunCall (GramOverloadedFunCall ts (Id _ funId) args) = do
@@ -126,47 +121,56 @@ Once implemented, generate = run generateProgram
 >   write load
 >   write $ "ldh -1\njsr\najs " ++ show (-1-length args) 
 
-> generateStmtBlock :: [GramStmt] -> Environment ()
-> generateStmtBlock stmts = do
+> generateStmtBlock :: Capture -> [GramStmt] -> Environment ()
+> generateStmtBlock capt stmts = do
 >   pushScope
->   generateStmtBlock' stmts
->   where generateStmtBlock' [] = popScope
->         generateStmtBlock' (stmt:stmts) = do
->           generateStmt stmt
->           generateStmtBlock' stmts
+>   generateStmtBlock' capt stmts
+>   where generateStmtBlock' capt [] = popScope
+>         generateStmtBlock' capt (stmt:stmts) = do
+>           generateStmt capt stmt
+>           generateStmtBlock' capt stmts
 
-> generateStmt :: GramStmt -> Environment ()
-> generateStmt (GramWhile _ expr stmts) = do
+> generateStmt :: Capture -> GramStmt -> Environment [Environment ()]
+> generateStmt capt (GramWhile _ expr stmts) = do
 >   wStart <- genLabel "while_start"
 >   wEnd <- genLabel "while_end"
 >   label wStart
 >   generateExpr expr
 >   write $ "brf " ++ wEnd
->   generateStmtBlock stmts
+>   generateStmtBlock capt stmts
 >   write $ "bra " ++ wStart
 >   label wEnd
-> generateStmt (GramIf _ expr thenStmts elseStmts) = do
+>   return []
+> generateStmt capt (GramIf _ expr thenStmts elseStmts) = do
 >   labelElse <- genLabel "else"
 >   labelIf <- genLabel "if"
 >   labelFi <- genLabel "fi"
 >   generateExpr expr
 >   write $ "brf " ++ labelElse
->   generateStmtBlock thenStmts 
+>   generateStmtBlock capt thenStmts 
 >   write $ "bra " ++ labelFi
 >   label labelElse 
->   generateStmtBlock elseStmts
+>   generateStmtBlock capt elseStmts
 >   label labelFi
-> generateStmt (GramReturn _ (Nothing)) = write "unlink\nret"
-> generateStmt (GramReturn _ (Just expr)) = do
+>   return []
+> generateStmt capt (GramReturn _ (Nothing)) = do
+>   write "unlink\nret"
+>   return []
+> generateStmt capt (GramReturn _ (Just expr)) = do
 >   generateExpr expr
 >   write "str RR\nunlink\nret"
-> generateStmt (GramFunVarDecl (GramVarDeclType t (Id _ varId) expr)) = do
+>   return []
+> generateStmt capt (GramFunVarDecl (GramVarDeclType t id@(Id _ varId) expr)) = do
 >   addVar varId
+>   captureIfNeeded capt id
 >   generateExpr expr
-> generateStmt (GramFunVarDecl (GramVarDeclVar (Id _ varId) expr)) = do
+>   return []
+> generateStmt capt (GramFunVarDecl (GramVarDeclVar id@(Id _ varId) expr)) = do
 >   addVar varId
+>   captureIfNeeded capt id
 >   generateExpr expr
-> generateStmt (GramAttr _ (Var (Id _ varId) fields) expr) = do
+>   return []
+> generateStmt capt (GramAttr _ (Var (Id _ varId) fields) expr) = do
 >   (load, store) <- lookupVar varId
 >   generateExpr expr
 >   case fields of
@@ -174,7 +178,18 @@ Once implemented, generate = run generateProgram
 >     (f:_) -> do
 >       write load
 >       descendFields True f
-> generateStmt (GramStmtFunCall funCall) = generateFunCall funCall
+>   return []
+> generateStmt capt (GramStmtFunCall funCall) = do
+>   generateFunCall funCall
+>   return []
+> generateStmt (Capture _ _ nestedcapts) (GramStmtFuncDecl (GramFuncDecl fid@(Id p funId) args annot stmts)) = do
+>   write $ "ldc " ++ lambdaName
+>   functionEnvironment nestedcapts fid
+>   write "stmh 2"
+>   addVar funId
+>   return [generateFunDecl nestedcapts lambdaDecl]
+>   where lambdaDecl = GramFuncDecl (Id p lambdaName) args annot stmts
+>         lambdaName = "_lambda_l" ++ (show $ sourceLine p) ++ "c" ++ (show $ sourceColumn p) ++ "_" ++ funId
 
 
 > generateExpr :: GramExp -> Environment ()
@@ -574,16 +589,57 @@ Variable handlers
 >             Nothing -> lookupVar' varId vs
 >             Just d -> d
 
+> replaceVar :: Id -> (Code, Code) -> Environment ()
+> replaceVar varId codes = do
+>   (ss, i) <- get
+>   put (replaceVar' varId codes ss, i)
+>   where replaceVar' _ _ [] = []
+>         replaceVar' varId codes (sc@(d,scope):scopes) =
+>           case lookup varId scope of
+>             Nothing -> sc : replaceVar' varId codes scopes
+>             Just _  -> (d, replaceVar'' varId codes scope) : scopes
+>         replaceVar'' varId codes scope = (varId, codes) : filter (\(id,_) -> id /= varId) scope
+
+
 
 Capture handlers
 
-data Capture = Capture GramId [VarId] [Capture]
+data Capture = Capture GramId [GramId] [Capture]
 
 > getCapture :: [Capture] -> GramId -> Capture
 > getCapture capts fid = capt
 >   where matchId fid (Capture cid _ _) = fid == cid
 >         Just capt = find (matchId fid) capts
 
+> captureVar :: GramId -> Environment ()
+> captureVar (Id _ vid) = do
+>   (load,store) <- lookupVar vid
+>   write load
+>   write $ "sth ; captured: " ++ vid
+>   write store
+>   let newload = load ++ "\nldh 0"
+>   let newstore = load ++ "\nlds -1\nsta 0\najs -1"
+>   replaceVar vid (newload, newstore)
+
+> captureIfNeeded :: Capture -> GramId -> Environment ()
+> captureIfNeeded (Capture _ _ nestedcapts) id
+>   | id `elem` capturedbynested = captureVar id
+>   | otherwise = return ()
+>   where capturedbynested = nub $ concat $ map getCaptured nestedcapts
+>         getCaptured = \(Capture _ captured _) -> captured
+
+> functionEnvironment :: [Capture] -> GramId -> Environment ()
+> functionEnvironment capts id = let capt = getCapture capts id in functionEnvironment' capt
+>   where functionEnvironment' (Capture _ [] _) = write "ldc 0"
+>         functionEnvironment' (Capture _ captured _) = functionEnvironment'' captured
+>         functionEnvironment'' [Id _ vid] = do
+>           (load,_) <- lookupVar vid
+>           write load
+>         functionEnvironment'' captured = do
+>           let (l, r) = splitAt ((length captured + 1) `div` 2) captured
+>           functionEnvironment'' l
+>           functionEnvironment'' r
+>           write "stmh 2"
 
 
 

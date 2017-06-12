@@ -4,7 +4,7 @@
 > import Text.Parsec.Pos (SourcePos)
 
 > data GramId = Id SourcePos String
->   deriving (Show, Eq)
+>   deriving (Show, Eq, Ord)
 
 > type Gram = [GramDecl]
 

@@ -1,12 +1,11 @@
-> module Dependency (dependencyAnalysis, Capture) where
+> module Dependency (dependencyAnalysis, Capture(..)) where
 
 > import Data.Graph
-> import Data.List ((\\))
+> import Data.List ((\\), find, nub)
 > import Grammar
 
-> type FunId = String
-> type VarId = String
-> data Capture = Capture GramId [VarId] [Capture]
+> type VariableScopes = [[[GramId]]] -- three levels deep to be able to distinguish between within-function blocks and nested functions
+> data Capture = Capture GramId [GramId] [Capture] -- Capture FunctionName NamesOfVariablesCapturedByMe NestedFunctionCaptures
 
 ===============================================================================
 ===============================================================================
@@ -30,84 +29,110 @@ captured by nested functions. The main function whose declaration is
 traversed can use this to decide which variables are stored on the heap.
 The nested functions can use this to know the number and order of 
 variables in their environment, as this depends on both themselves and 
-nested functions.
+nested functions. They are named in terms of GramIds at definition time,
+so that they can be matched independently of nesting and branching depth.
 ===============================================================================
 ===============================================================================
 
 
 > dependencyAnalysis :: [GramDecl] -> ([[GramDecl]], [Capture])
 > dependencyAnalysis decls = (map unpackSCC $ stronglyConnComp deps, capts)
->   where globals = getGlobals decls
->         (deps, capts) = dependencies globals decls
+>   where initScope = [[getGlobals decls]]
+>         (deps, capts) = dependencies initScope decls
 >         unpackSCC (AcyclicSCC el) = [el]
 >         unpackSCC (CyclicSCC els) = els
 
-> dependencies :: [VarId] -> [GramDecl] -> ([(GramDecl, VarId, [VarId])], [Capture])
+> dependencies :: VariableScopes -> [GramDecl] -> ([(GramDecl, GramId, [GramId])], [Capture])
 > dependencies _ [] = ([],[])
-> dependencies globals (decl:decls) = (deps ++ otherdeps, capts ++ othercapts)
->   where (deps, capts) = declDeps globals decl
->         (otherdeps, othercapts) = dependencies globals decls
+> dependencies defs (decl:decls) = (deps:otherdeps, capts ++ othercapts)
+>   where (deps, capts) = declDeps defs decl
+>         (otherdeps, othercapts) = dependencies defs decls
 
-> declDeps :: [VarId] -> GramDecl -> ((GramDecl, VarId, [VarId]), [Capture])
-> declDeps _ (GramDeclVar vardecl) = ((GramDeclVar vardecl, varname, deps), [])
->   where (varname, deps) = varDeclDeps [] vardecl
-> declDeps globals (GramDeclFun fundecl) = ((GramDeclFun fundecl, fid, deps), [capt])
->   where (GramFuncDecl fun@(Id _ fid) args _ stmts) = fDecl
->         (capt, deps) = funcDeps globals fun args stmts
+> declDeps :: VariableScopes -> GramDecl -> ((GramDecl, GramId, [GramId]), [Capture])
+> declDeps defs (GramDeclVar vardecl) = ((GramDeclVar vardecl, varname, deps), [])
+>   where (varname, deps) = varDeclDeps defs vardecl
+> declDeps defs (GramDeclFun fundecl) = ((GramDeclFun fundecl, fid, deps), [capt])
+>   where (GramFuncDecl fid args _ stmts) = fundecl
+>         (capt, deps) = funcDeps defs fid args stmts
 
-> funcDeps :: [VarId] -> GramId -> [GramId] -> [GramStmt] -> (Capture, [VarId])
-> funcDeps globals fun@(Id _ fid) fargs stmts = (capt, deps)
->   where listArgs = map (\(Id _ argid) -> argid)
->         (nestedcapts, deps) = blockDeps (fid : listArgs fargs) stmts
->         capt = Capture fun (deps \\ globals) nestedcapts -- global variables/functions are not captured
+> funcDeps :: VariableScopes -> GramId -> [GramId] -> [GramStmt] -> (Capture, [GramId])
+> funcDeps defs fid fargs stmts = (capt, nub deps)
+>   where newdefs = newFunc defs (fid:fargs)
+>         (nestedcapts, deps) = blockDeps newdefs stmts
+>         capturedvars = nub $ deps \\ (globalScope defs) -- global variables/functions are not captured.
+>         capt = Capture fid capturedvars nestedcapts     -- note local variables of this function are not in deps
 
-> varDeclDeps :: [VarId] -> GramVarDecl -> (VarId, [VarId])
-> varDeclDeps locals (GramVarDeclVar    (Id _ vid) e) = (vid, exprDeps (vid:locals) e) -- recursive variable definitions are prohibited by the type checker
-> varDeclDeps locals (GramVarDeclType _ (Id _ vid) e) = (vid, exprDeps (vid:locals) e) -- but still do not need to affect dependencies
+> varDeclDeps :: VariableScopes -> GramVarDecl -> (GramId, [GramId])
+> varDeclDeps defs (GramVarDeclVar    vid e) = (vid, exprDeps defs e)
+> varDeclDeps defs (GramVarDeclType _ vid e) = (vid, exprDeps defs e)
 
-> blockDeps :: [VarId] -> [VarId] -> [GramStmt] -> ([Capture], [VarId])
-> blockDeps _ _ [] = ([],[])
-> blockDeps globals locals (stmt:stmts) = (capts ++ newcapts, deps ++ blockdeps)
->   where (newlocals, capts, deps) = stmtDeps locals stmt
->         (newcapts, blockdeps) = blockDeps globals (locals ++ newlocals) stmts
+> blockDeps :: VariableScopes -> [GramStmt] -> ([Capture], [GramId])
+> blockDeps _ [] = ([],[])
+> blockDeps defs (stmt:stmts) = (newcapts ++ blockcapts, deps ++ blockdeps)
+>   where (newlocals, newcapts, deps) = stmtDeps defs stmt
+>         (blockcapts, blockdeps) = blockDeps (addToScope defs newlocals) stmts
 
-> stmtDeps :: [VarId] -> [VarId] -> GramStmt -> ([VarId], [Capture], [VarId])
-> stmtDeps globals locals (GramIf _ e tr fa) = ([], trcapts ++ facapts, (exprDeps locals e) ++ trdeps ++ fadeps)
->   where (trcapts, trdeps) = blockDeps globals locals tr
->         (facapts, fadeps) = blockDeps globals locals fa
-> stmtDeps globals locals (GramWhile _ e loop) = ([], capts, (exprDeps locals e) ++ deps)
->   where (capts, deps) = blockDeps globals locals loop
-> stmtDeps globals locals (GramAttr _ (Var (Id _ vid) _) e)
->   | vid `elem` locals = ([], exprDeps locals e)
->   | otherwise = ([], vid : exprDeps locals e)
-> stmtDeps globals locals (GramStmtFunCall funcall) = ([], funCallDeps locals funcall)
-> stmtDeps globals locals (GramReturn _ me) = 
->   case me of Just e  -> ([], exprDeps locals e)
->              Nothing -> ([],[])
-> stmtDeps globals locals (GramFunVarDecl vardecl) = ([varname], deps)
->   where (varname, deps) = varDeclDeps locals vardecl
-> stmtDeps globals locals (GramStmtFuncDecl fundecl) = ([funname], [capt], deps \\ locals) -- locals are not global dependencies, but
->   where (GramFuncDecl fid args _ stmts) = fundecl                                        -- for capture analysis, their usage should
->         (capt, deps) = funcDeps globals fid args stmts                                   -- not be ignored in the nested function
+> stmtDeps :: VariableScopes -> GramStmt -> ([GramId], [Capture], [GramId])
+> stmtDeps defs (GramIf _ e tr fa) = ([], trcapts ++ facapts, (exprDeps defs e) ++ trdeps ++ fadeps)
+>   where (trcapts, trdeps) = blockDeps (newBlock defs) tr
+>         (facapts, fadeps) = blockDeps (newBlock defs) fa
+> stmtDeps defs (GramWhile _ e loop) = ([], capts, (exprDeps defs e) ++ deps)
+>   where (capts, deps) = blockDeps (newBlock defs) loop
+> stmtDeps defs (GramAttr _ (Var vid _) e) = ([],[], (varDependency defs vid) ++ (exprDeps defs e))
+> stmtDeps defs (GramStmtFunCall funcall) = ([],[], funCallDeps defs funcall)
+> stmtDeps defs (GramReturn _ me) = 
+>   case me of Just e  -> ([],[], exprDeps defs e)
+>              Nothing -> ([],[],[])
+> stmtDeps defs (GramFunVarDecl vardecl) = ([varname], [], deps)
+>   where (varname, deps) = varDeclDeps defs vardecl
+> stmtDeps defs (GramStmtFuncDecl fundecl) = ([fid], [capt], nonlocaldeps)
+>   where (GramFuncDecl fid args _ stmts) = fundecl                      
+>         (capt, deps) = funcDeps defs fid args stmts                       
+>         nonlocaldeps = concat $ map (varDependency defs) deps -- removes nested function's dependencies of local variables within this function scope
 
-> exprDeps :: [VarId] -> GramExp -> [VarId]
-> exprDeps locals (GramExpTuple _ e1 e2) = (exprDeps locals e1) ++ (exprDeps locals e2)
-> exprDeps locals (GramBinary _ _ e1 e2) = (exprDeps locals e1) ++ (exprDeps locals e2)
-> exprDeps locals (GramUnary _ _ e) = exprDeps locals e
-> exprDeps locals (GramExpId (Var (Id _ vid) _))
->   | vid `elem` locals = []
->   | otherwise = [vid]
-> exprDeps locals (GramExpFunCall funcall) = funCallDeps locals funcall
+> exprDeps :: VariableScopes -> GramExp -> [GramId]
+> exprDeps defs (GramExpTuple _ e1 e2) = (exprDeps defs e1) ++ (exprDeps defs e2)
+> exprDeps defs (GramBinary _ _ e1 e2) = (exprDeps defs e1) ++ (exprDeps defs e2)
+> exprDeps defs (GramUnary _ _ e) = exprDeps defs e
+> exprDeps defs (GramExpId (Var vid _)) = varDependency defs vid
+> exprDeps defs (GramExpFunCall funcall) = funCallDeps defs funcall
 > exprDeps _ _ = []
 
-> funCallDeps :: [VarId] -> GramFunCall -> [VarId]
-> funCallDeps locals (GramFunCall (Id _ fid) args)
->   | fid `elem` locals = argDeps locals args
->   | otherwise = fid : argDeps locals args
->   where argDeps locals = concat . map (exprDeps locals)
+> funCallDeps :: VariableScopes -> GramFunCall -> [GramId]
+> funCallDeps defs (GramFunCall fid args) = (varDependency defs fid) ++ (argDeps defs args)
+>   where argDeps defs = concat . map (exprDeps defs)
 
-> getGlobals :: [GramDecl] -> [VarId]
+> getGlobals :: [GramDecl] -> [GramId]
 > getGlobals = map getName
->   where getName (GramDeclFun (GramFuncDecl (Id _ fid) _ _ _))  = fid
->         getName (GramDeclVar (GramVarDeclType _ (Id _ vid) _)) = vid
->         getName (GramDeclVar (GramVarDeclVar    (Id _ vid) _)) = vid
+>   where getName (GramDeclFun (GramFuncDecl fid _ _ _))  = fid
+>         getName (GramDeclVar (GramVarDeclType _ vid _)) = vid
+>         getName (GramDeclVar (GramVarDeclVar    vid _)) = vid
+
+
+Scope handlers
+
+> newBlock :: VariableScopes -> VariableScopes
+> newBlock (funscope:defs) = ([]:funscope):defs
+
+> newFunc :: VariableScopes -> [GramId] -> VariableScopes
+> newFunc defs ids = [[],ids]:defs
+
+> addToScope :: VariableScopes -> [GramId] -> VariableScopes
+> addToScope ((blocklocals:funlocals):defs) ids = ((ids ++ blocklocals):funlocals):defs
+
+> globalScope :: VariableScopes -> [GramId]
+> globalScope defs = last $ last defs
+
+> varDependency :: VariableScopes -> GramId -> [GramId]
+> varDependency defs id = varDependency' True defs id
+>   where matchId (Id _ qid) (Id _ vid) = qid == vid
+>         varInFunScope [] _ = Nothing
+>         varInFunScope (blockscope:blockscopes) id = 
+>           case find (matchId id) blockscope of
+>             Just vid -> Just vid
+>             Nothing  -> varInFunScope blockscopes id
+>         varDependency' _ [] _ = []
+>         varDependency' top (funscope:funscopes) id =
+>           case varInFunScope funscope id of
+>             Just vid -> if top then [] else [vid]
+>             Nothing  -> varDependency' False funscopes id
