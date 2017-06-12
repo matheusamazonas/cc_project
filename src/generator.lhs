@@ -175,13 +175,13 @@ Once implemented, generate = run generateProgram
 >   return []
 > generateStmt capt (GramFunVarDecl (GramVarDeclType t id@(Id _ varId) expr)) = do
 >   addVar varId
->   captureIfNeeded capt id
 >   generateExpr expr
+>   captureIfNeeded capt id
 >   return []
 > generateStmt capt (GramFunVarDecl (GramVarDeclVar id@(Id _ varId) expr)) = do
 >   addVar varId
->   captureIfNeeded capt id
 >   generateExpr expr
+>   captureIfNeeded capt id
 >   return []
 > generateStmt capt (GramAttr _ (Var (Id _ varId) fields) expr) = do
 >   (load, store) <- lookupVar varId
