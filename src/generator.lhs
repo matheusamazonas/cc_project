@@ -428,6 +428,19 @@ Standard library
 >   printChar ')'
 >   write "ret"   
 
+> generateDisplay :: Environment ()
+> generateDisplay = do
+>   write "\n; define display"
+>   write "display: lds -2\nldh -1\nldr PC\nadd\nstr PC"
+>   write "bra __display_char\nbra __exc_display\nbra __exc_display\nbra __display_list\nbra __exc_display\nbra __exc_display"
+>   write "__display_char: lds -1\ntrap 1\nret"
+>   write "__display_list: lds -2\nldh 0\nldh -1\nldc 3\neq\nbrf __exc_display"
+>   write "lds -1\nbrf __display_str_post" -- check for empty string
+>   write "__display_str_elem: lds -1\nldh -1\ntrap 1" -- print head 
+>   write "lds -1\nldh 0\nbrf __display_str_post" -- check for end of list
+>   write "lds -1\nldh 0\nsts -2\nbra __display_str_elem" -- if more characters remain, recurse 
+>   write "__display_str_post: ret"
+
 > callEquals :: GramType -> Environment ()
 > callEquals (GramBasicType _ CharType) = write "eq"
 > callEquals (GramBasicType _ IntType) = write "eq"
@@ -472,12 +485,12 @@ Standard library
 
 > generateIsEmpty :: Environment ()
 > generateIsEmpty = do
->   write "\n;define isEmpty"
+>   write "\n; define isEmpty"
 >   write "isEmpty: lds -1\nldc 0\neq\nstr RR\nret\n"
 
 > generateChrOrd :: Environment ()
 > generateChrOrd = do
->   write "\n;define chr"
+>   write "\n; define chr"
 >   write "chr: lds -1\nstr RR\nret\n"
 >   write "\n;define ord"
 >   write "ord: lds -1\nstr RR\nret\n"
@@ -492,17 +505,19 @@ Standard library
 
 Standard library handlers
 
-> builtinNames = ["print", "isEmpty", "chr", "ord", "error"]
+> builtinNames = ["print", "display", "isEmpty", "chr", "ord", "error"]
 
 > builtins = let und = undefined in
 >   [polyBuildIn "print" generatePrint,
 >    polyBuildIn "==" generateEquals,
+>    generateDisplay,
 >    generateIsEmpty,
 >    generateChrOrd,
 >    generateError,
->    runTimeException "__exc_empty_list_traversal" "Runtime exception: empty list traversed",
->    runTimeException "__exc_untyped_variable" "Runtime exception: could not resolve overloading for print",
->    runTimeException "__exc_unknown_error" "Runtime exception: an unknown error occurred"]
+>    runTimeException "__exc_empty_list_traversal" "empty list traversed",
+>    runTimeException "__exc_untyped_variable" "could not resolve overloading for print",
+>    runTimeException "__exc_display" "display can only be used for characters and character lists",
+>    runTimeException "__exc_unknown_error" "an unknown error occurred"]
 
 > polyBuildIn :: String -> (Maybe GramType -> Environment ()) -> Environment ()
 > polyBuildIn s f = do
@@ -520,7 +535,7 @@ Exception handlers
 >   write $ "; " ++ s
 >   label lab
 >   printChar '\n'
->   printText s
+>   printText $ "A runtime exception occurred: " ++ s
 >   printChar '\n'
 >   write "halt\n"
 
