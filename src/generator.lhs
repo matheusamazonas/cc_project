@@ -6,7 +6,7 @@
 > import Data.Char (ord, digitToInt)
 > import Data.List ((!!), find, genericLength, intersect, isPrefixOf, nub)
 > import Text.Parsec.Pos (sourceLine, sourceColumn)
-> import Dependency (Capture(..))
+> import Dependency (Capture(..), freeTypeVars)
 > import Grammar
 > import Token
 > import Error
@@ -332,15 +332,9 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >   addTypeFrameArgs' (-2-numArgs) freeIds
 >   return $ length freeIds
 >   where addTypeFrameArgs' _ [] = return ()
->         addTypeFrameArgs' i (id:ids) = do
+>         addTypeFrameArgs' i ((Id _ id):ids) = do
 >           addArg ("__tf_" ++ id) (toInteger i)
 >           addTypeFrameArgs' (i-1) ids
->         freeTypeVars (GramIdType (Id _ id)) 
->           | isPrefixOf "_v" id = [drop 2 id]
->           | otherwise = []
->         freeTypeVars (GramListType _ t) = freeTypeVars t
->         freeTypeVars (GramTupleType _ t1 t2) = freeTypeVars t1 ++ freeTypeVars t2
->         freeTypeVars _ = []
 
 
 

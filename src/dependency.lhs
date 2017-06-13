@@ -1,8 +1,9 @@
-> module Dependency (dependencyAnalysis, Capture(..)) where
+> module Dependency (dependencyAnalysis, freeTypeVars, Capture(..)) where
 
 > import Data.Graph
-> import Data.List ((\\), find, nub)
+> import Data.List ((\\), find, isPrefixOf, nub)
 > import Grammar
+> import Text.Parsec.Pos (newPos)
 
 > type VariableScopes = [[[GramId]]] -- three levels deep to be able to distinguish between within-function blocks and nested functions
 > data Capture = Capture GramId [GramId] [Capture] -- Capture FunctionName NamesOfVariablesCapturedByMe NestedFunctionCaptures
@@ -53,12 +54,13 @@ so that they can be matched independently of nesting and branching depth.
 > declDeps defs (GramDeclVar vardecl) = ((GramDeclVar vardecl, varname, deps), [])
 >   where (varname, deps) = varDeclDeps defs vardecl
 > declDeps defs (GramDeclFun fundecl) = ((GramDeclFun fundecl, fid, deps), [capt])
->   where (GramFuncDecl fid args _ stmts) = fundecl
->         (capt, deps) = funcDeps defs fid args stmts
+>   where (GramFuncDecl fid args annot stmts) = fundecl
+>         (capt, deps) = funcDeps defs fid args annot stmts
 
-> funcDeps :: VariableScopes -> GramId -> [GramId] -> [GramStmt] -> (Capture, [GramId])
-> funcDeps defs fid fargs stmts = (capt, nub deps)
->   where newdefs = newFunc defs (fid:fargs)
+> funcDeps :: VariableScopes -> GramId -> [GramId] -> [GramFunTypeAnnot] -> [GramStmt] -> (Capture, [GramId])
+> funcDeps defs fid fargs annot stmts = (capt, nub deps)
+>   where funlocals = (fid:fargs) ++ (typeAnnotDeps defs annot)
+>         newdefs = newFunc defs funlocals
 >         (nestedcapts, deps) = blockDeps newdefs stmts
 >         capturedvars = (nub deps) \\ (globalScope defs) -- global variables/functions are not captured.
 >         capt = Capture fid capturedvars nestedcapts     -- note local variables of this function are not in deps
@@ -87,8 +89,8 @@ so that they can be matched independently of nesting and branching depth.
 > stmtDeps defs (GramFunVarDecl vardecl) = ([varname], [], deps)
 >   where (varname, deps) = varDeclDeps defs vardecl
 > stmtDeps defs (GramStmtFuncDecl fundecl) = ([fid], [capt], nonlocaldeps)
->   where (GramFuncDecl fid args _ stmts) = fundecl                      
->         (capt, deps) = funcDeps defs fid args stmts                       
+>   where (GramFuncDecl fid args annot stmts) = fundecl                
+>         (capt, deps) = funcDeps defs fid args annot stmts                       
 >         nonlocaldeps = concat $ map (varDependency defs) deps -- removes nested function's dependencies of local variables within this function scope
 
 > exprDeps :: VariableScopes -> GramExp -> [GramId]
@@ -100,14 +102,43 @@ so that they can be matched independently of nesting and branching depth.
 > exprDeps _ _ = []
 
 > funCallDeps :: VariableScopes -> GramFunCall -> [GramId]
+> funCallDeps defs (GramOverloadedFunCall annots fid args) = (typesDeps defs annots) ++ (funCallDeps defs $ GramFunCall fid args)
 > funCallDeps defs (GramFunCall fid args) = (varDependency defs fid) ++ (argDeps defs args)
 >   where argDeps defs = concat . map (exprDeps defs)
 
+> typeAnnotDeps :: VariableScopes -> [GramFunTypeAnnot] -> [GramId]
+> typeAnnotDeps _ [] = []
+> typeAnnotDeps defs [GramFunTypeAnnot ts _] = typesDeps defs ts
+
+> typesDeps :: VariableScopes -> [GramType] -> [GramId]
+> typesDeps defs ts = concat $ map (concat . map (varDependency defs) . nub . freeTypeVars) ts
+
+> freeTypeVars :: GramType -> [GramId]
+> freeTypeVars (GramIdType vid@(Id _ id)) 
+>   | isPrefixOf "_v" id = [tfName vid]
+>   | otherwise = []
+> freeTypeVars (GramListType _ t) = freeTypeVars t
+> freeTypeVars (GramTupleType _ t1 t2) = freeTypeVars t1 ++ freeTypeVars t2
+> freeTypeVars (GramForAllType _ bound tinner) = (nub $ freeTypeVars tinner) \\ (map tfName bound)
+> freeTypeVars (GramFunType _ (GramFunTypeAnnot targs tret)) = 
+>   let tvars = concat $ map freeTypeVars targs in 
+>     case tret of
+>       GramVoidType _ -> tvars
+>       GramRetType  t -> tvars ++ freeTypeVars t
+> freeTypeVars _ = []
+
+> tfName :: GramId -> GramId
+> tfName (Id _ id) = Id (newPos "<internal>" 0 0) $ "__tf_" ++ drop 2 id
+
 > getGlobals :: [GramDecl] -> [GramId]
-> getGlobals = map getName
+> getGlobals decls = builtIns ++ map getName decls
 >   where getName (GramDeclFun (GramFuncDecl fid _ _ _))  = fid
 >         getName (GramDeclVar (GramVarDeclType _ vid _)) = vid
 >         getName (GramDeclVar (GramVarDeclVar    vid _)) = vid
+
+> builtIns :: [GramId]
+> builtIns = map bi ["print", "display", "isEmpty", "chr", "ord", "error"]
+>   where bi = Id $ newPos "<builtin>" 0 0
 
 
 Scope handlers
@@ -132,7 +163,9 @@ Scope handlers
 >           case find (matchId id) blockscope of
 >             Just vid -> Just vid
 >             Nothing  -> varInFunScope blockscopes id
->         varDependency' _ [] _ = []
+>         varDependency' _ [] id@(Id _ qid)
+>           | isPrefixOf "__tf_" qid = [id] 
+>           | otherwise = []
 >         varDependency' top (funscope:funscopes) id =
 >           case varInFunScope funscope id of
 >             Just vid -> if top then [] else [vid]

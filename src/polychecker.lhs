@@ -669,6 +669,20 @@ A description of (mutual) deep skolemisation can be found in [1].
 >           annots1 <- typeAnnotation tsig1 targ1 
 >           annots2 <- typeAnnotation tsig2 targ2
 >           return $ annots1 ++ annots2
+>         typeAnnotation (GramFunType _ (GramFunTypeAnnot sigtypes sigret)) (GramFunType _ (GramFunTypeAnnot argtypes argret)) = do
+>           let t1s = case sigret of (GramVoidType _) -> sigtypes    -- note that there can be no
+>                                    (GramRetType t1) -> t1:sigtypes -- discrepancy between the two
+>           let t2s = case argret of (GramVoidType _) -> argtypes    -- types in e.g. voidness/non-
+>                                    (GramRetType t2) -> t2:argtypes -- voidness; this is guaranteed by
+>           typeAnnotations t1s t2s                                  -- the type checking system
+>         typeAnnotation (GramForAllType _ bound tinner) t = do
+>           ids <- get
+>           put $ ids ++ map (\(Id _ i) -> drop 2 i) bound
+>           typeAnnotation tinner t
+>         typeAnnotation t (GramForAllType _ bound tinner) = do
+>           ids <- get
+>           put $ ids ++ map (\(Id _ i) -> drop 2 i) bound
+>           typeAnnotation t tinner
 >         typeAnnotation _ _ = return []
 >         splitFunc (TFunc targs tret) = (targs, tret)
 >         splitFunc (TForAll _ t) = splitFunc t
@@ -800,7 +814,8 @@ A description of (mutual) deep skolemisation can be found in [1].
 > subsumesFunc :: SourcePos -> [Polytype] -> RhoType -> [Polytype] -> RhoType -> Environment () -- |-dsk* ({sigma1} -> sigma2) <= ({sigma3} -> rho4)
 > subsumesFunc p targs1 tret1 targs2 tret2 = do -- rule FUN
 >   zipWithM_ (\targ1 targ2 -> subsumesPoly p targ2 targ1) targs1 targs2
->   subsumes p tret1 tret2
+>   if (tret1 == TVoid) /= (tret2 == TVoid) then throwError $ CompilationError TypeChecker ("Void function cannot be used when a non-void return type is expected") p
+>   else subsumes p tret1 tret2
 
 
 

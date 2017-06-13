@@ -4,6 +4,7 @@
 > import Dependency (dependencyAnalysis)
 > import Lexer (lexer)
 > import Parser (parseTokens)
+> import Printer (printGram)
 > import PolyChecker (inferProg)
 > import Generator (generate)
 > import System.IO
@@ -23,8 +24,9 @@
 >   let pos = newPos sourceName 1 1
 >   tokens <- lexer pos content
 >   tree <- parseTokens sourceName tokens 
->   let (blocks, captures) = dependencyAnalysis tree
+>   let (blocks, _) = dependencyAnalysis tree
 >   aast <- inferProg blocks
+>   let (_, captures) = dependencyAnalysis aast
 >   result <- generate captures aast
 >   return result
 
