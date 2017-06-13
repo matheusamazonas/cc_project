@@ -14,7 +14,7 @@
 > type Depth = Integer
 > type Id = String
 > type Code = String
-> type Scope = (Depth, [(Id, (Code, Code))])
+> type Scope = (Depth, [(Id, (Code, Code, Code))])
 > type EnvType = ([Scope], Int)
 
 > type Environment = WriterT Code (State EnvType)
@@ -69,12 +69,12 @@ Once implemented, generate = run generateProgram
 > generateVariable (GramVarDeclVar (Id _ varId) expr) = do
 >   write $ "\n; initialise global: " ++ varId
 >   generateExpr expr
->   (_, store) <- lookupVar varId
+>   (_, store, _) <- lookupVar varId
 >   write store
 > generateVariable (GramVarDeclType _ (Id _ varId) expr) = do
 >   write $ "\n; initialise global: " ++ varId
 >   generateExpr expr
->   (_, store) <- lookupVar varId
+>   (_, store, _) <- lookupVar varId
 >   write store
 
 > addArgs :: [GramId] -> Environment ()
@@ -98,9 +98,10 @@ Once implemented, generate = run generateProgram
 >   let argCounter = length args
 >   if funId /= "main" then write "link 0" else return ()
 >   isPoly <- addTypeFrameArgs argCounter $ getArgTypes types
->   addArg "__env" $ decrIfTrue isPoly argCounter
+>   addArg "__env" $ decrIfTrue isPoly (-2-argCounter)
 >   addArgs args
 >   mapM_ (captureIfNeeded capt) args
+>   addEnvironment capt
 >   pushScope
 >   lams <- generateStmtBlock capt stmts
 >   case getFuncReturnType types of
@@ -115,7 +116,7 @@ Once implemented, generate = run generateProgram
 
 > generateFunCall :: GramFunCall -> Environment ()
 > generateFunCall (GramOverloadedFunCall ts (Id _ funId) args) = do
->   (load, _) <- lookupVar funId
+>   (load, _, _) <- lookupVar funId
 >   write $ fixHeapFunctionCalls $ load ++ "\nldh 0" -- load environment
 >   functionTypeFrame ts
 >   let rev_args = reverse args
@@ -123,7 +124,7 @@ Once implemented, generate = run generateProgram
 >   write $ fixHeapFunctionCalls $ load ++ "\nldh -1" -- actual function label
 >   write $ "jsr\najs " ++ show (-2-length args) 
 > generateFunCall (GramFunCall (Id _ funId) args) = do
->   (load, _) <- lookupVar funId
+>   (load, _, _) <- lookupVar funId
 >   write $ fixHeapFunctionCalls $ load ++ "\nldh 0" -- load environment
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
@@ -184,12 +185,12 @@ Once implemented, generate = run generateProgram
 >   captureIfNeeded capt id
 >   return []
 > generateStmt capt (GramAttr _ (Var (Id _ varId) fields) expr) = do
->   (load, store) <- lookupVar varId
+>   (load, store, _) <- lookupVar varId
 >   generateExpr expr
 >   case fields of
->     [] -> write store
+>     [] -> write store -- write new reference
 >     (f:_) -> do
->       write load
+>       write load      -- assign to fields by reference
 >       descendFields True f
 >   return []
 > generateStmt capt (GramStmtFunCall funCall) = do
@@ -229,7 +230,7 @@ Once implemented, generate = run generateProgram
 >   generateExpr expr
 >   write $ generateUnaryOperation op
 > generateExpr (GramExpId (Var (Id _ varId) fields)) = do
->   (load, store) <- lookupVar varId
+>   (load, store, _) <- lookupVar varId
 >   write load
 >   case fields of
 >     [] -> return ()
@@ -264,17 +265,17 @@ Once implemented, generate = run generateProgram
 >     write "not"
 
 > descendFields :: Bool -> GramField -> Environment ()
-> descendFields save f = case f of
+> descendFields store f = case f of
 >   First p fields  -> do
->     descend save "-1" fields
+>     descend store "-1" fields
 >   Second p fields -> do
->     descend save "0" fields
+>     descend store "0" fields
 >   Head p fields   -> do
 >     write "lds 0\nbrf __exc_empty_list_traversal"
->     descend save "-1" fields
+>     descend store "-1" fields
 >   Tail p fields   -> do
 >     write "lds 0\nbrf __exc_empty_list_traversal"
->     descend save "0" fields
+>     descend store "0" fields
 >   where descend :: Bool -> String -> [GramField] -> Environment ()
 >         descend False offset fields = do
 >           write $ "ldh " ++ offset
@@ -319,8 +320,8 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >   write "stmh 2\nstmh 2"
 > typeFrame (GramIdType (Id _ id))
 >   | isPrefixOf "_t" id || isPrefixOf "_v" id = do
->     (tfload, _) <- lookupVar "__tf"
->     (typeload, _) <- lookupVar $ "__tf_" ++ drop 2 id
+>     (tfload, _, _) <- lookupVar "__tf"
+>     (typeload, _, _) <- lookupVar $ "__tf_" ++ drop 2 id
 >     write $ loadTF tfload typeload
 >   | otherwise = write "bra __exc_unknown_error"
 >   where loadTF _ "bra __exc_unknown_error" = "ldc 13\nldc 0\nstmh 2"
@@ -336,10 +337,12 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 
 > addTypeFrameArgs :: Int -> [GramType] -> Environment Bool
 > addTypeFrameArgs locali ts = do
->   addArg "__tf" $ toInteger (-2-locali)
 >   let freeIds = nub $ concat $ map freeTypeVars ts
 >   addTypeFrameArgs' locali (length freeIds) 0 freeIds
->   return $ not $ null freeIds
+>   if null freeIds then return False
+>   else do
+>     addArg "__tf" $ toInteger (-2-locali)
+>     return True
 >   where addTypeFrameArgs' :: Int -> Int -> Int -> [String] -> Environment ()
 >         addTypeFrameArgs' _ _ _ [] = return ()
 >         addTypeFrameArgs' locali numFrames i (id:ids) = do
@@ -351,14 +354,14 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >           let fid = "__tf_" ++ id
 >           let loadIns = removeFinalNewline $ "bra __exc_unknown_error\n" ++ getTypeFrame numFrames i
 >           let storeIns = "bra __exc_unknown_error"
->           put ((d,(fid, (loadIns, storeIns)):v):ss, nxt)
+>           let addressIns = "bra __exc_unknown_error"
+>           put ((d,(fid, (loadIns, storeIns, addressIns)):v):ss, nxt)
 >         freeTypeVars (GramIdType (Id _ id)) 
 >           | isPrefixOf "_v" id = [drop 2 id]
 >           | otherwise = []
 >         freeTypeVars (GramListType _ t) = freeTypeVars t
 >         freeTypeVars (GramTupleType _ t1 t2) = freeTypeVars t1 ++ freeTypeVars t2
 >         freeTypeVars _ = []
->         getTypeFrame :: Int -> Int -> String
 >         getTypeFrame 1 _ = ""
 >         getTypeFrame numFrames i 
 >           | i+1 <= lsize = "ldh -1\n" ++ getTypeFrame lsize i
@@ -533,7 +536,7 @@ Post-processing
 > postprocess :: Code -> Code
 > postprocess = fixDoubleLabels
 
-> fixDoubleLabels :: Code -> Code
+> fixDoubleLabels :: Code -> Code -- removes faulty situations such as: "fi_6: while_7: statement"
 > fixDoubleLabels code = 
 >   let fixes = map (findDoubleLabels . words) $ lines code in
 >   let substitute = applySub $ foldr (++) [] $ map snd fixes in
@@ -550,13 +553,13 @@ Post-processing
 >           | otherwise = ln
 >         subbedInstructions = ["bra ", "brf ", "brt ", "bsr ", "ldc "]
 
-> fixHeapFunctionCalls :: Code -> Code
-> fixHeapFunctionCalls load = let lns = lines load in unlines $ fixHeapFunctionCalls' lns
->   where fixHeapFunctionCalls' lns 
->           | length lns >= 4 && (last $ init lns) == "stmh 2" && isPrefixOf "ldh " (last lns) =
->             let ind = length lns - 3 - (digitToInt $ last $ last lns) in
->               (take (length lns - 4) lns) ++ [lns !! ind]
->           | otherwise = lns
+> fixHeapFunctionCalls :: Code -> Code                                                            -- a function pointer is a tuple (code address, environment).
+> fixHeapFunctionCalls load = let lns = lines load in unlines $ fixHeapFunctionCalls' lns         -- we need this for function variables, but for global functions
+>   where fixHeapFunctionCalls' lns                                                               -- tuple is created anew at every function call.
+>           | length lns >= 4 && (last $ init lns) == "stmh 2" && isPrefixOf "ldh " (last lns) =  -- this takes up unnecessary heap space.
+>             let ind = length lns - 3 - (digitToInt $ last $ last lns) in                        -- since it is an easy pattern to recognise,
+>               (take (length lns - 4) lns) ++ [lns !! ind]                                       -- we get rid of the tuple creation and extract 
+>           | otherwise = lns                                                                     -- only the line we need (either code address or environment)
 
 
 Scope handlers
@@ -580,40 +583,44 @@ Variable handlers
 >   (((d,v):ss), i) <- get
 >   let loadIns = "ldl " ++ show d
 >       storeIns = "stl " ++ show d
->   put ((d+1,(id, (loadIns, storeIns)):v):ss, i)
+>       addressIns = "ldla " ++ show d
+>   put ((d+1,(id, (loadIns, storeIns, addressIns)):v):ss, i)
 
 > addGlobal :: Id -> Environment ()
 > addGlobal id = do
 >   (((d,v):ss), i) <- get
 >   let loadIns = "ldc " ++ show (d+1) ++ "\nlda 0"
 >       storeIns = "ldc " ++ show (d+1) ++ "\nsta 0"
->   put ((d+1,(id, (loadIns, storeIns)):v):ss, i)
+>       addressIns = "ldc " ++ show (d+1)
+>   put ((d+1,(id, (loadIns, storeIns, addressIns)):v):ss, i)
 
 > addGlobalFunc :: Id -> Environment ()
 > addGlobalFunc id = do
 >   (((d,v):ss), i) <- get
 >   let loadIns = "ldc " ++ id ++ "\nldc 0\nstmh 2"
 >       storeIns = "bra __exc_unknown_error"
->   put ((d+1,(id, (loadIns, storeIns)):v):ss, i)
+>       addressIns = "bra __exc_unknown_error"
+>   put ((d+1,(id, (loadIns, storeIns, addressIns)):v):ss, i)
 
 > addArg :: Id -> Integer -> Environment ()
 > addArg varId id = do
 >   (((d,v):ss), i) <- get
 >   let loadIns = "ldl " ++ show id
 >       storeIns = "stl " ++ show id
->   put ((d,(varId, (loadIns, storeIns)):v):ss, i)
+>       addressIns = "ldla " ++ show id
+>   put ((d,(varId, (loadIns, storeIns, addressIns)):v):ss, i)
 
-> lookupVar :: Id -> Environment (Code, Code)
+> lookupVar :: Id -> Environment (Code, Code, Code)
 > lookupVar varId = do
 >   (ss, _) <- get
 >   return $ lookupVar' varId ss
->   where lookupVar' _ [] = ("bra __exc_unknown_error", "bra __exc_unknown_error")
+>   where lookupVar' _ [] = ("bra __exc_unknown_error", "bra __exc_unknown_error", "bra __exc_unknown_error")
 >         lookupVar' varId ((_,v):vs) =
 >           case lookup varId v of
 >             Nothing -> lookupVar' varId vs
 >             Just d -> d
 
-> replaceVar :: Id -> (Code, Code) -> Environment ()
+> replaceVar :: Id -> (Code, Code, Code) -> Environment ()
 > replaceVar varId codes = do
 >   (ss, i) <- get
 >   put (replaceVar' varId codes ss, i)
@@ -626,7 +633,7 @@ Variable handlers
 
 
 
-Capture handlers
+Capture and environment handlers
 
 data Capture = Capture GramId [GramId] [Capture]
 
@@ -637,13 +644,14 @@ data Capture = Capture GramId [GramId] [Capture]
 
 > captureVar :: GramId -> Environment ()
 > captureVar (Id _ vid) = do
->   (load,store) <- lookupVar vid
+>   (load,store,_) <- lookupVar vid
 >   write load
->   write $ "sth ; captured: " ++ vid
+>   write $ "sth ; capture " ++ vid
 >   write store
 >   let newload = load ++ "\nldh 0"
->   let newstore = load ++ "\nlds -1\nsta 0\najs -1"
->   replaceVar vid (newload, newstore)
+>   let newstore = load ++ "\nsta 0"
+>   let newaddr = load
+>   replaceVar vid (newload, newstore, newaddr)
 
 > captureIfNeeded :: Capture -> GramId -> Environment ()
 > captureIfNeeded (Capture _ _ nestedcapts) id
@@ -657,21 +665,35 @@ data Capture = Capture GramId [GramId] [Capture]
 >   where functionEnvironment' (Capture _ [] _) = write "ldc 0"
 >         functionEnvironment' (Capture _ captured _) = functionEnvironment'' captured
 >         functionEnvironment'' [Id _ vid] = do
->           (load,_) <- lookupVar vid
->           write $ addressOf load
+>           (_,_,addr) <- lookupVar vid
+>           write addr
 >         functionEnvironment'' captured = do
 >           let (l, r) = splitAt ((length captured + 1) `div` 2) captured
 >           functionEnvironment'' l
 >           functionEnvironment'' r
 >           write "stmh 2"
 
-> addressOf :: String -> String
-> addressOf load = let lns = lines load in addressOf' lns
->   where addressOf' lns 
->           | length lns <= 2 && (isPrefixOf "ldl " $ head lns) = "ldla" ++ (drop 3 $ head lns)
->           | length lns >= 4 && (last $ init lns) == "stmh 2" && isPrefixOf "ldh " (last lns) =
->             error $ "test error: addressOf encountered unexpected input: " ++ unlines lns
->           | otherwise = error $ unlines lns
+> addEnvVar :: Id -> Integer -> Integer -> Environment ()
+> addEnvVar varId envSize id = do
+>   (((d,v):ss), i) <- get
+>   (loadEnv,_,_) <- lookupVar "__env"
+>   let loadAddrFromEnv = loadEnv ++ getFromEnv envSize id
+>       loadIns = loadAddrFromEnv ++ "\nldh 0"
+>       storeIns = loadAddrFromEnv ++ "\nsta 0"
+>       addressIns = loadAddrFromEnv
+>   put ((d,(varId, (loadIns, storeIns, addressIns)):v):ss, i)
+>   where getFromEnv 1 _ = ""
+>         getFromEnv numVars i 
+>           | i+1 <= lsize = "ldh -1\n" ++ getFromEnv lsize i
+>           | otherwise = "ldh 0\n" ++ getFromEnv (numVars-lsize) (i-lsize)
+>           where lsize = (numVars + 1) `div` 2
+
+> addEnvironment :: Capture -> Environment ()
+> addEnvironment (Capture _ captured _) = addEnvironment' captured (toInteger $ length captured) 0
+>   where addEnvironment' [] _ _ = return ()
+>         addEnvironment' ((Id _ id):captured) envSize i = do
+>           addEnvVar id envSize $ toInteger i
+>           addEnvironment' captured envSize (i+1)
 
 
 Label handlers
