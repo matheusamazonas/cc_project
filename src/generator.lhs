@@ -115,8 +115,6 @@ Once implemented, generate = run generateProgram
 >   where getArgTypes [GramFunTypeAnnot ftypes tret] = 
 >           case tret of (GramVoidType _) -> ftypes
 >                        (GramRetType  t) -> t:ftypes
->         decrIfTrue True x = toInteger $ x-1
->         decrIfTrue _    x = toInteger x
 
 > generateFunCall :: GramFunCall -> Environment ()
 > generateFunCall (GramOverloadedFunCall ts (Id _ funId) args) = do
@@ -327,8 +325,8 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >     (load, _, _) <- lookupVar $ "__tf_" ++ drop 2 id
 >     write $ repl load 
 >   | otherwise = write "bra __exc_unknown_error"
->   where repl "bra __exc_unknown_error" = "ldc 13\nldc 0\nstmh 2"
->         repl ld = ld
+>   where repl "bra __exc_unknown_error" = "ldc 13\nldc 0\nstmh 2" -- catches error in case of e.g. empty list of type [_v1]
+>         repl ld = ld                                             -- and replaces with more specific runtime exception if faulty
 
 > addTypeFrameArgs :: Int -> [GramType] -> Environment Int
 > addTypeFrameArgs numArgs ts = do
@@ -542,7 +540,7 @@ Post-processing
 >         subbedInstructions = ["bra ", "brf ", "brt ", "bsr ", "ldc "]
 
 > fixHeapFunctionCalls :: Code -> Code                                                            -- a function pointer is a tuple (code address, environment).
-> fixHeapFunctionCalls load = let lns = lines load in unlines $ fixHeapFunctionCalls' lns         -- we need this for function variables, but for global functions
+> fixHeapFunctionCalls load = let lns = lines load in init $ unlines $ fixHeapFunctionCalls' lns  -- we need this for function variables, but for global functions
 >   where fixHeapFunctionCalls' lns                                                               -- tuple is created anew at every function call.
 >           | length lns >= 4 && (last $ init lns) == "stmh 2" && isPrefixOf "ldh " (last lns) =  -- this takes up unnecessary heap space.
 >             let ind = length lns - 3 - (digitToInt $ last $ last lns) in                        -- since it is an easy pattern to recognise,
@@ -665,16 +663,18 @@ data Capture = Capture GramId [GramId] [Capture]
 > addEnvVar varId envSize id = do
 >   (((d,v):ss), i) <- get
 >   (loadEnv,_,_) <- lookupVar "__env"
->   let loadAddrFromEnv = loadEnv ++ "\n" ++ getFromEnv envSize id
+>   let loadAddrFromEnv = sep loadEnv $ getFromEnv envSize id
 >       loadIns = loadAddrFromEnv ++ "\nldh 0"
 >       storeIns = loadAddrFromEnv ++ "\nsta 0"
 >       addressIns = loadAddrFromEnv
 >   put ((d,(varId, (loadIns, storeIns, addressIns)):v):ss, i)
 >   where getFromEnv 1 _ = ""
 >         getFromEnv numVars i 
->           | i+1 <= lsize = "ldh -1\n" ++ getFromEnv lsize i
->           | otherwise = "ldh 0\n" ++ getFromEnv (numVars-lsize) (i-lsize)
+>           | i+1 <= lsize = sep "ldh -1" $ getFromEnv lsize i
+>           | otherwise = sep "ldh 0" $ getFromEnv (numVars-lsize) (i-lsize)
 >           where lsize = (numVars + 1) `div` 2
+>         sep s "" = s
+>         sep s1 s2 = s1 ++ "\n" ++ s2
 
 > addFunctionEnvironment :: Capture -> Environment ()
 > addFunctionEnvironment (Capture _ captured _) = addFunctionEnvironment' captured (toInteger $ length captured) 0
