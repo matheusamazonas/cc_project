@@ -7,10 +7,10 @@
 > import Data.List ((\\), find, intersect, isPrefixOf, nub, sortBy)
 > import Dependency
 > import Grammar
-> import Printer (printGram)
 > import Text.Parsec.Pos (newPos, SourcePos)
 > import Text.Read (readMaybe)
 > import Token 
+> import Error
 
 > data Type = TBool | TInt | TChar | TVoid | TTuple Type Type | TList Type | TFunc [Type] Type | TVar VId | TBound VId | TSkolem VId | TForAll [VId] Type
 >   deriving (Show, Eq, Ord)
@@ -28,9 +28,8 @@
 > type SubList = [(VId, Type)]
 > type Scope = [(String, VId)]
 > type EnvType = (SubList, [Scope], VId)
-> type TypeError = (String, SourcePos)
 
-> type Environment = StateT EnvType (Either TypeError)
+> type Environment = StateT EnvType (Either CompilationError)
 
 
 ===============================================================================
@@ -114,7 +113,7 @@ test more complicated ones than this
  Top-level structure
 ===============================================================================
 
-> inferProg :: [[GramDecl]] -> Either TypeError [GramDecl]
+> inferProg :: [[GramDecl]] -> Either CompilationError [GramDecl]
 > inferProg declBlocks =
 >   case runStateT (inference declBlocks) initEnv of
 >     Left e             -> Left e
@@ -178,7 +177,7 @@ test more complicated ones than this
 >     case () of 
 >       _ | length decls > 1 ->
 >             let Id p i = getId decl in
->               throwError ("Mutually recursive variable definitions are not allowed: " ++ i, p)
+>               throwError $ CompilationError TypeChecker ("Mutually recursive variable definitions are not allowed: " ++ i) p
 >         | otherwise -> return ()
 >   where isVar (GramDeclVar _) = True
 >         isVar _ = False
@@ -216,7 +215,7 @@ test more complicated ones than this
 >           (newinsts,v) <- unifyWith pos insts v t
 >           (arglist, finsts) <- listArgTypes id newinsts vars ftypes
 >           return $ (v:arglist, finsts)
->         listArgTypes id@(Id pos i) _ _ _ = throwError ("Mismatching number of arguments in type signature: " ++ i, pos)
+>         listArgTypes id@(Id pos i) _ _ _ = throwError $ CompilationError TypeChecker ("Mismatching number of arguments in type signature: " ++ i) pos
 >         retType pos insts v (GramRetType t)  = do
 >           (_,tret) <- unifyWith pos insts v t
 >           return tret
@@ -250,7 +249,7 @@ test more complicated ones than this
 >         inferVarDeclTailPost id@(Id p i) e v vid = do
 >           v <- convert v
 >           addToScope id vid
->           if occurs vid v then throwError ("Recursive variable definition detected: " ++ i, p)
+>           if occurs vid v then throwError $ CompilationError TypeChecker ("Recursive variable definition detected: " ++ i) p
 >           else return ()
 >         replErr var = replaceErrorType ("Variable out of scope: " ++ var) ("Recursive variable definition detected: " ++ var)
 
@@ -271,7 +270,7 @@ test more complicated ones than this
 >     SometimesReturns -> do
 >       vret <- convert vret
 >       if vret == TVoid then return ()
->       else throwError ("Non-void function contains non-returning code paths: " ++ i, p)
+>       else throwError $ CompilationError TypeChecker ("Non-void function contains non-returning code paths: " ++ i) p
 >     AlwaysReturns -> return ()
 >   return $ GramFuncDecl id fargs ftypes stmts
 >   where declareArgs [] _ = return ()
@@ -334,7 +333,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >       return (tret, stmt:stmts)
 >     AlwaysReturns    ->
 >       if null stmts then return $ (AlwaysReturns, [stmt])
->       else throwError ("Unreachable code detected", p)
+>       else throwError $ CompilationError TypeChecker ("Unreachable code detected") p
 >     SometimesReturns -> do
 >       texp2 <- expectedSubtype texp
 >       (tret, stmts) <- inferStmtBlock p stmts texp2
@@ -401,7 +400,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 > inferStmt (GramAttr p (Var id@(Id pos i) fields) e) texp = do -- let var = (exp::t) (global typed variable declaration), but with fields
 >   vid <- getVarId id
 >   t <- getVarType id
->   if vid < 0 then throwError ("Cannot override built-in function " ++ i, pos)
+>   if vid < 0 then throwError $ CompilationError TypeChecker ("Cannot override built-in function " ++ i) pos
 >   else do
 >     tfield <- traverseFields fields p t
 >     checkTypePoly e tfield
@@ -471,7 +470,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   return orig
 > inferExpr (GramExpFunCall funcall) t = do
 >   (p,i,tret,funcall) <- inferFunCall funcall t
->   if tret == TVoid then throwError ("Void function (" ++ i ++ ") used in an expression", p)
+>   if tret == TVoid then throwError $ CompilationError TypeChecker ("Void function (" ++ i ++ ") used in an expression") p
 >   else return $ GramExpFunCall funcall
 
 > inferFunCall :: GramFunCall -> Expected RhoType -> Environment (SourcePos, String, Type, GramFunCall)
@@ -493,7 +492,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >           (es,targs) <- inferArgs id es targs
 >           targ <- convert targ
 >           return (e:es, convertToGramType targ : targs)
->         inferArgs (Id pos i) _ _ = throwError ("Mismatching number of arguments given to function: " ++ i, pos)
+>         inferArgs (Id pos i) _ _ = throwError $ CompilationError TypeChecker ("Mismatching number of arguments given to function: " ++ i) pos
 >         isPolymorph (TForAll _ _) = True
 >         isPolymorph _ = False
 
@@ -626,7 +625,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   e2 <- postDecorateExpr e2
 >   t <- convertGramType t
 >   if typeAllowed t then return $ GramOverloadedBinary p t op e1 e2
->   else throwError ("Equality is not defined for functions", p)
+>   else throwError $ CompilationError TypeChecker ("Equality is not defined for functions") p
 >   where typeAllowed (GramForAllType _ _ _) = False
 >         typeAllowed (GramFunType _ _) = False
 >         typeAllowed _ = True
@@ -635,7 +634,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   return $ GramUnary p op e
 > postDecorateExpr (GramExpFunCall funcall) = do
 >   (tret,i,p,funcall) <- postDecorateFunCall funcall
->   if tret == TVoid then throwError ("Void function used in an expression: " ++ i, p) -- catches otherwise uncaught "f() { return g(); } g() { f(); }"
+>   if tret == TVoid then throwError $ CompilationError TypeChecker ("Void function used in an expression: " ++ i) p -- catches otherwise uncaught "f() { return g(); } g() { f(); }"
 >   else return $ GramExpFunCall funcall
 > postDecorateExpr e = return e
 
@@ -687,25 +686,25 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   sub <- lift $ unification p t1 t2
 >   apply sub
 
-> unification :: SourcePos -> Monotype -> Monotype -> Either TypeError SubList
+> unification :: SourcePos -> Monotype -> Monotype -> Either CompilationError SubList
 > unification _ TVoid TVoid  = Right []
 > unification _ TChar TChar  = Right []
 > unification _ TInt TInt    = Right []
 > unification _ TBool TBool  = Right []
 > unification p (TVar i) t
 >   | t == (TVar i)      = Right []
->   | occurs i t             = Left ("Recursive type detected", p)
+>   | occurs i t             = Left $ CompilationError TypeChecker "Recursive type detected" p
 >   | otherwise              = Right [(i, t)]
 > unification p t (TVar i)
 >   | t == (TVar i)      = Right []
->   | occurs i t             = Left ("Recursive type detected", p)
+>   | occurs i t             = Left $ CompilationError TypeChecker "Recursive type detected" p
 >   | otherwise              = Right [(i, t)]
 > unification p (TSkolem i) t
 >   | t == TSkolem i         = Right []
->   | otherwise              = Left ("Polymorphic type was less general than was required (subsumption check failed)", p)
+>   | otherwise              = Left $ CompilationError TypeChecker "Polymorphic type was less general than was required (subsumption check failed)" p
 > unification p t (TSkolem i)
 >   | t == TSkolem i         = Right []
->   | otherwise              = Left ("Polymorphic type was less general than was required (subsumption check failed)", p)
+>   | otherwise              = Left $ CompilationError TypeChecker "Polymorphic type was less general than was required (subsumption check failed)" p
 > unification p (TList ta) (TList tb) = unification p ta tb
 > unification p (TTuple ta1 ta2) (TTuple tb1 tb2) = do
 >   sub1 <- unification p ta1 tb1
@@ -716,7 +715,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   sub1 <- unification p ta1 tb1
 >   sub2 <- unification p (sub1 |-> (TFunc ta1s ta2)) (sub1 |-> (TFunc tb1s tb2))
 >   return $ sub1 ++ sub2
-> unification p t1 t2 = Left ("Can't unify types " ++ show t1 ++ " and " ++ show t2, p)
+> unification p t1 t2 = Left $ CompilationError TypeChecker ("Can't unify types " ++ show t1 ++ " and " ++ show t2) p
 
 > occurs :: VId -> Monotype -> Bool
 > occurs i (TTuple ta tb)          = (occurs i ta) || (occurs i tb) -- implements occurs check
@@ -765,7 +764,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   e <- inferExpr e $ Check wpt
 >   tenvs <- envTypes
 >   tfree <- freeVars $ t:tenvs
->   if any (`elem` tfree) $ map snd skolems then throwError ("The given expression was not polymorphic enough", getExpPos e)
+>   if any (`elem` tfree) $ map snd skolems then throwError $ CompilationError TypeChecker ("The given expression was not polymorphic enough") (getExpPos e)
 >   else return e
 
 
@@ -779,7 +778,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   (skolemSubs, wp2) <- skolemise poly2
 >   subsumes p poly1 wp2
 >   fvids <- freeVars [poly1, poly2]
->   if any (`elem` fvids) (map snd skolemSubs) then throwError ("Polymorphic type was less general than was required (subsumption check failed)", p)
+>   if any (`elem` fvids) (map snd skolemSubs) then throwError $ CompilationError TypeChecker ("Polymorphic type was less general than was required (subsumption check failed)") p
 >   else return ()
 
 > subsumes :: SourcePos -> Polytype -> RhoType -> Environment () -- |-dsk* sigma <= rho
@@ -852,7 +851,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 > assertFunc :: SourcePos -> Int -> RhoType -> Environment ([Polytype], RhoType)
 > assertFunc p nargs (TFunc targs tret)
 >   | length targs == nargs = return (targs, tret)
->   | otherwise = throwError ("Cannot unify functions with mismatching numbers of arguments", p)
+>   | otherwise = throwError $ CompilationError TypeChecker ("Cannot unify functions with mismatching numbers of arguments") p
 > assertFunc p nargs t = do
 >   vargs <- replicateM nargs fresh
 >   vret <- fresh
@@ -975,7 +974,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   let (_, scopes, _) = s
 >   getVarId' v scopes
 >   where getVarId' :: GramId -> [Scope] -> Environment VId
->         getVarId' (Id p var) [] = throwError ("Variable out of scope: " ++ var, p)
+>         getVarId' (Id p var) [] = throwError $ CompilationError TypeChecker ("Variable out of scope: " ++ var) p
 >         getVarId' vid@(Id p var) (scope:scopes) =
 >           case lookup var scope of
 >             Nothing -> getVarId' vid scopes
@@ -986,8 +985,8 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   s <- get
 >   let (subs, scope:scopes, nextvar) = s
 >   case lookup var scope of
->     Just i  -> if i >= 0 then throwError ("Variable declared twice: " ++ var, p)
->                else throwError ("Cannot override built-in function: " ++ var, p)
+>     Just i  -> if i >= 0 then throwError $ CompilationError TypeChecker ("Variable declared twice: " ++ var) p
+>                else throwError $ CompilationError TypeChecker  ("Cannot override built-in function: " ++ var) p
 >     Nothing -> do
 >       let newscopes = if var /= "" then ((var, nextvar):scope):scopes else scope:scopes
 >       put (subs, newscopes, nextvar+1)
@@ -1019,11 +1018,11 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   s <- get
 >   let (subs, scope:scopes, nextvar) = s
 >   case lookup var $ last $ scope:scopes of
->     Just i  -> if i < 0 then throwError ("Cannot override built-in function: " ++ var, p)
+>     Just i  -> if i < 0 then throwError $ CompilationError TypeChecker ("Cannot override built-in function: " ++ var) p
 >                else return ()
 >     Nothing -> return ()
 >   case lookup var scope of
->     Just i  -> throwError ("Variable declared twice: " ++ var, p)
+>     Just i  -> throwError $ CompilationError TypeChecker ("Variable declared twice: " ++ var) p
 >     Nothing -> do
 >       let newscopes = ((var,i):scope):scopes
 >       put (subs, newscopes, nextvar)
@@ -1213,14 +1212,14 @@ A description of (mutual) deep skolemisation can be found in [1].
 > addErrorDesc :: String -> Environment t -> Environment t
 > addErrorDesc s = mapStateT (wrapError s)
 >   where wrapError _ (Right r) = Right r
->         wrapError s (Left (msg,p)) = Left (s ++ msg, p)
+>         wrapError s (Left (CompilationError _ msg p)) = Left $ CompilationError TypeChecker (s ++ msg) p
 
 > replaceErrorType :: String -> String -> Environment t -> Environment t
 > replaceErrorType frm to = mapStateT (wrapError frm to)
 >   where wrapError _ _ (Right r) = Right r
->         wrapError frm to (Left (msg,p))
->           | isPrefixOf frm msg = Left (to,  p)
->           | otherwise  = Left (msg, p)
+>         wrapError frm to (Left (CompilationError _ msg p))
+>           | isPrefixOf frm msg = Left $ CompilationError TypeChecker to  p
+>           | otherwise  = Left $ CompilationError TypeChecker msg p
 
 
 

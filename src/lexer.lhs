@@ -1,12 +1,12 @@
 > module Lexer (lexer) where
 
 > import Token
+> import Error
 > import Control.Monad (liftM2)
 > import Data.Char
 > import Text.Parsec.Pos
 
-> type LexerError = (String, SourcePos)
-> type LexerResult = Either LexerError [PosToken]
+> type LexerResult = Either CompilationError [PosToken]
 
 > (|||) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 > f ||| g = \x -> (f x) || (g x)
@@ -70,7 +70,7 @@ column to 1 as well.
 > lexer p (']':xs)                = (TokenCloseSquareB, p)        <:> lexer (incSourceColumn p 1) xs
 > lexer p ('.':xs)                = (TokenPeriod, p)              <:> lexer (incSourceColumn p 1) xs
 > lexer p (',':xs)                = (TokenComma , p)              <:> lexer (incSourceColumn p 1) xs
-> lexer p (x:_)                   = Left ("Can't lex " ++ show x, p)
+> lexer p (x:_)                   = Left $ CompilationError Lexer ("Can't lex: " ++ show x) p
 
 > listConst :: SourcePos -> PosToken
 > listConst p = (TokenOp ListConst, incSourceColumn p 1)

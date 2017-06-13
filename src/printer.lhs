@@ -4,7 +4,7 @@
 > import Grammar
 > import Lexer
 > import Token
-> import Parser (pSPL, showParsingErrors)
+> import Parser (pSPL)
 > import Text.Parsec.Combinator (eof)
 > import Text.ParserCombinators.Parsec.Prim (parse)
 > import Text.Parsec.Error (errorPos, errorMessages)
@@ -20,13 +20,12 @@
 
 > prettyPrint :: String -> IO ()
 > prettyPrint s = case lexer nP s of
->     Left (e, p) -> do 
->       putStrLn $ "Lexer error: " ++ e ++ "\n\tat " ++ show p
+>     Left e -> do 
+>       putStrLn $ show e
 >     Right tokens -> do
 >       case parse (pSPL <* eof) "test" tokens of
 >         Left e -> do 
->           putStrLn $ "Parser error: " ++ showParsingErrors (errorMessages e)
->           putStrLn $ "\tat " ++ show (errorPos e)
+>           putStrLn $ show e
 >         Right tree -> do
 >           putStrLn $ printGram tree
 

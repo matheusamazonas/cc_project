@@ -2,20 +2,15 @@
 
 > import Text.ParserCombinators.Parsec.Prim hiding (satisfy)
 > import Text.Parsec.Pos (SourcePos, newPos)
-> import Text.Parsec.Error (ParseError)
 > import Text.Parsec.Combinator (optional, optionMaybe, many1, chainl1, chainl, sepEndBy, sepBy, eof)
-> import Text.Parsec.Error (showErrorMessages, Message)
 > import Control.Monad (void)
 > import Control.Applicative ((<$>))
 > import Data.Maybe (maybeToList)
-> import Lexer (lexer)
 > import Grammar
 > import Token
+> import Error
 
 > type MyParser a = GenParser PosToken () a
-
-> showParsingErrors :: [Message] -> String
-> showParsingErrors es = showErrorMessages "or" "unknown parse error" "expecting" "unexpected" "end of input" es
 
 Advance and satisfy were based on code from 
 from http://osa1.net/posts/2012-08-30-separating-lexing-and-parsing-in-parsec.html
@@ -528,8 +523,12 @@ Grammar: SPL = Decl+
 > pSPL :: MyParser Gram
 > pSPL = many1 pDecl
 
-> parseTokens :: String -> [PosToken] -> Either ParseError Gram
-> parseTokens fileName content = parse (pSPL <* eof) fileName content
+> parseTokens :: String -> [PosToken] -> Either CompilationError Gram
+> parseTokens fileName content = case parse (pSPL <* eof) fileName content of
+>   Left e -> Left $ convertError Parser e
+>   Right g -> Right g
+
+
 
 
 

@@ -5,12 +5,12 @@
 > import Control.Monad.Writer (WriterT, tell, execWriterT)
 > import Data.Char (ord, digitToInt)
 > import Data.List ((!!), find, genericLength, intersect, isPrefixOf, nub)
+> import Text.Parsec.Pos (sourceLine, sourceColumn)
 > import Dependency (Capture(..))
 > import Grammar
-> import Text.Parsec.Pos (sourceLine, sourceColumn)
 > import Token
+> import Error
 
-> type GeneratorError = String
 > type Depth = Integer
 > type Id = String
 > type Code = String
@@ -26,10 +26,10 @@ Code generation
 Call with, e.g., run generateStmtBlock stmts, with stmts :: [GramStmt]
 Once implemented, generate = run generateProgram
 
-> generate :: [Capture] -> Gram -> Either GeneratorError Code
+> generate :: [Capture] -> Gram -> Either CompilationError Code
 > generate capts g
 >   | hasMain g = pure $ postprocess $ run (generateProgram capts) g
->   | otherwise = Left "Program doesn't contain a function main()"
+>   | otherwise = Left $ CompilationError TypeChecker ("Program doesn't contain a function main()") undefined
 
 > generateProgram :: [Capture] -> Gram -> Environment ()
 > generateProgram capts g = do 
