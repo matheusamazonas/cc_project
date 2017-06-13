@@ -60,7 +60,7 @@ so that they can be matched independently of nesting and branching depth.
 > funcDeps defs fid fargs stmts = (capt, nub deps)
 >   where newdefs = newFunc defs (fid:fargs)
 >         (nestedcapts, deps) = blockDeps newdefs stmts
->         capturedvars = nub $ deps \\ (globalScope defs) -- global variables/functions are not captured.
+>         capturedvars = (nub deps) \\ (globalScope defs) -- global variables/functions are not captured.
 >         capt = Capture fid capturedvars nestedcapts     -- note local variables of this function are not in deps
 
 > varDeclDeps :: VariableScopes -> GramVarDecl -> (GramId, [GramId])
