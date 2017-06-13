@@ -97,11 +97,13 @@ Once implemented, generate = run generateProgram
 >   label funId
 >   let argCounter = length args
 >   if funId /= "main" then write "link 0" else return ()
->   numTFArgs <- addTypeFrameArgs argCounter $ getArgTypes types
+>   let tvarids = getArgTypes types
+>   numTFArgs <- addTypeFrameArgs argCounter tvarids
+>   mapM_ (captureIfNeeded capt) $ freeTypeIds tvarids
 >   addArg "__env" $ toInteger $ -(2 + argCounter + numTFArgs)
+>   addFunctionEnvironment capt
 >   addArgs args
 >   mapM_ (captureIfNeeded capt) args
->   addEnvironment capt
 >   pushScope
 >   lams <- generateStmtBlock capt stmts
 >   case getFuncReturnType types of
@@ -110,7 +112,9 @@ Once implemented, generate = run generateProgram
 >   sequence_ lams
 >   popScope
 >   popScope
->   where getArgTypes [GramFunTypeAnnot ftypes _] = ftypes
+>   where getArgTypes [GramFunTypeAnnot ftypes tret] = 
+>           case tret of (GramVoidType _) -> ftypes
+>                        (GramRetType  t) -> t:ftypes
 >         decrIfTrue True x = toInteger $ x-1
 >         decrIfTrue _    x = toInteger x
 
@@ -122,14 +126,14 @@ Once implemented, generate = run generateProgram
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
 >   write $ fixHeapFunctionCalls $ load ++ "\nldh -1" -- actual function label
->   write $ "jsr\najs " ++ show (-2-length args) 
+>   write $ "jsr\najs " ++ show (-1 - length args - length ts) 
 > generateFunCall (GramFunCall (Id _ funId) args) = do
 >   (load, _, _) <- lookupVar funId
 >   write $ fixHeapFunctionCalls $ load ++ "\nldh 0" -- load environment
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
 >   write $ fixHeapFunctionCalls $ load ++ "\nldh -1" -- actual function label
->   write $ "jsr\najs " ++ show (-1-length args) 
+>   write $ "jsr\najs " ++ show (-1 - length args) 
 
 > generateStmtBlock :: Capture -> [GramStmt] -> Environment [Environment ()]
 > generateStmtBlock capt [] = return []
@@ -328,13 +332,16 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 
 > addTypeFrameArgs :: Int -> [GramType] -> Environment Int
 > addTypeFrameArgs numArgs ts = do
->   let freeIds = nub $ concat $ map freeTypeVars ts
+>   let freeIds = freeTypeIds ts
 >   addTypeFrameArgs' (-2-numArgs) freeIds
 >   return $ length freeIds
 >   where addTypeFrameArgs' _ [] = return ()
 >         addTypeFrameArgs' i ((Id _ id):ids) = do
->           addArg ("__tf_" ++ id) (toInteger i)
+>           addArg id (toInteger i)
 >           addTypeFrameArgs' (i-1) ids
+
+> freeTypeIds :: [GramType] -> [GramId]
+> freeTypeIds ts = nub $ concat $ map freeTypeVars ts
 
 
 
@@ -635,8 +642,8 @@ data Capture = Capture GramId [GramId] [Capture]
 >   replaceVar vid (newload, newstore, newaddr)
 
 > captureIfNeeded :: Capture -> GramId -> Environment ()
-> captureIfNeeded (Capture _ _ nestedcapts) id
->   | id `elem` capturedbynested = captureVar id
+> captureIfNeeded (Capture _ captures nestedcapts) id
+>   | id `elem` capturedbynested && not (id `elem` captures) = captureVar id
 >   | otherwise = return ()
 >   where capturedbynested = nub $ concat $ map getCaptured nestedcapts
 >         getCaptured = \(Capture _ captured _) -> captured
@@ -658,7 +665,7 @@ data Capture = Capture GramId [GramId] [Capture]
 > addEnvVar varId envSize id = do
 >   (((d,v):ss), i) <- get
 >   (loadEnv,_,_) <- lookupVar "__env"
->   let loadAddrFromEnv = loadEnv ++ getFromEnv envSize id
+>   let loadAddrFromEnv = loadEnv ++ "\n" ++ getFromEnv envSize id
 >       loadIns = loadAddrFromEnv ++ "\nldh 0"
 >       storeIns = loadAddrFromEnv ++ "\nsta 0"
 >       addressIns = loadAddrFromEnv
@@ -669,12 +676,12 @@ data Capture = Capture GramId [GramId] [Capture]
 >           | otherwise = "ldh 0\n" ++ getFromEnv (numVars-lsize) (i-lsize)
 >           where lsize = (numVars + 1) `div` 2
 
-> addEnvironment :: Capture -> Environment ()
-> addEnvironment (Capture _ captured _) = addEnvironment' captured (toInteger $ length captured) 0
->   where addEnvironment' [] _ _ = return ()
->         addEnvironment' ((Id _ id):captured) envSize i = do
+> addFunctionEnvironment :: Capture -> Environment ()
+> addFunctionEnvironment (Capture _ captured _) = addFunctionEnvironment' captured (toInteger $ length captured) 0
+>   where addFunctionEnvironment' [] _ _ = return ()
+>         addFunctionEnvironment' ((Id _ id):captured) envSize i = do
 >           addEnvVar id envSize $ toInteger i
->           addEnvironment' captured envSize (i+1)
+>           addFunctionEnvironment' captured envSize (i+1)
 
 
 Label handlers
