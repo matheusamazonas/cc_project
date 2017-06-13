@@ -97,8 +97,8 @@ Once implemented, generate = run generateProgram
 >   label funId
 >   let argCounter = length args
 >   if funId /= "main" then write "link 0" else return ()
->   isPoly <- addTypeFrameArgs argCounter $ getArgTypes types
->   addArg "__env" $ decrIfTrue isPoly (-2-argCounter)
+>   numTFArgs <- addTypeFrameArgs argCounter $ getArgTypes types
+>   addArg "__env" $ toInteger $ -(2 + argCounter + numTFArgs)
 >   addArgs args
 >   mapM_ (captureIfNeeded capt) args
 >   addEnvironment capt
@@ -118,7 +118,7 @@ Once implemented, generate = run generateProgram
 > generateFunCall (GramOverloadedFunCall ts (Id _ funId) args) = do
 >   (load, _, _) <- lookupVar funId
 >   write $ fixHeapFunctionCalls $ load ++ "\nldh 0" -- load environment
->   functionTypeFrame ts
+>   mapM_ typeFrame $ reverse ts
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
 >   write $ fixHeapFunctionCalls $ load ++ "\nldh -1" -- actual function label
@@ -320,55 +320,27 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >   write "stmh 2\nstmh 2"
 > typeFrame (GramIdType (Id _ id))
 >   | isPrefixOf "_t" id || isPrefixOf "_v" id = do
->     (tfload, _, _) <- lookupVar "__tf"
->     (typeload, _, _) <- lookupVar $ "__tf_" ++ drop 2 id
->     write $ loadTF tfload typeload
+>     (load, _, _) <- lookupVar $ "__tf_" ++ drop 2 id
+>     write $ repl load 
 >   | otherwise = write "bra __exc_unknown_error"
->   where loadTF _ "bra __exc_unknown_error" = "ldc 13\nldc 0\nstmh 2"
->         loadTF tfload typeload = tfload ++ (unlines $ tail $ lines $ typeload)
+>   where repl "bra __exc_unknown_error" = "ldc 13\nldc 0\nstmh 2"
+>         repl ld = ld
 
-> functionTypeFrame :: [GramType] -> Environment ()
-> functionTypeFrame [t] = typeFrame t
-> functionTypeFrame ts = do
->   let (l, r) = splitAt ((length ts + 1) `div` 2) ts
->   functionTypeFrame l
->   functionTypeFrame r
->   write "stmh 2"
-
-> addTypeFrameArgs :: Int -> [GramType] -> Environment Bool
-> addTypeFrameArgs locali ts = do
+> addTypeFrameArgs :: Int -> [GramType] -> Environment Int
+> addTypeFrameArgs numArgs ts = do
 >   let freeIds = nub $ concat $ map freeTypeVars ts
->   addTypeFrameArgs' locali (length freeIds) 0 freeIds
->   if null freeIds then return False
->   else do
->     addArg "__tf" $ toInteger (-2-locali)
->     return True
->   where addTypeFrameArgs' :: Int -> Int -> Int -> [String] -> Environment ()
->         addTypeFrameArgs' _ _ _ [] = return ()
->         addTypeFrameArgs' locali numFrames i (id:ids) = do
->           addTypeFrameArg locali numFrames i id
->           addTypeFrameArgs' locali numFrames (i+1) ids
->         addTypeFrameArg :: Int -> Int -> Int -> String -> Environment ()
->         addTypeFrameArg locali numFrames i id = do
->           (((d,v):ss), nxt) <- get
->           let fid = "__tf_" ++ id
->           let loadIns = removeFinalNewline $ "bra __exc_unknown_error\n" ++ getTypeFrame numFrames i
->           let storeIns = "bra __exc_unknown_error"
->           let addressIns = "bra __exc_unknown_error"
->           put ((d,(fid, (loadIns, storeIns, addressIns)):v):ss, nxt)
+>   addTypeFrameArgs' (-2-numArgs) freeIds
+>   return $ length freeIds
+>   where addTypeFrameArgs' _ [] = return ()
+>         addTypeFrameArgs' i (id:ids) = do
+>           addArg ("__tf_" ++ id) (toInteger i)
+>           addTypeFrameArgs' (i-1) ids
 >         freeTypeVars (GramIdType (Id _ id)) 
 >           | isPrefixOf "_v" id = [drop 2 id]
 >           | otherwise = []
 >         freeTypeVars (GramListType _ t) = freeTypeVars t
 >         freeTypeVars (GramTupleType _ t1 t2) = freeTypeVars t1 ++ freeTypeVars t2
 >         freeTypeVars _ = []
->         getTypeFrame 1 _ = ""
->         getTypeFrame numFrames i 
->           | i+1 <= lsize = "ldh -1\n" ++ getTypeFrame lsize i
->           | otherwise = "ldh 0\n" ++ getTypeFrame (numFrames-lsize) (i-lsize)
->           where lsize = (numFrames + 1) `div` 2
->         removeFinalNewline "" = ""
->         removeFinalNewline s = init s
 
 
 
