@@ -587,7 +587,7 @@ Variable handlers
 >   let loadIns = "ldc " ++ id ++ "\nldc 0\nstmh 2"
 >       storeIns = "bra __exc_unknown_error"
 >       addressIns = "bra __exc_unknown_error"
->   put ((d+1,(id, (loadIns, storeIns, addressIns)):v):ss, i)
+>   put ((d,(id, (loadIns, storeIns, addressIns)):v):ss, i)
 
 > addArg :: Id -> Integer -> Environment ()
 > addArg varId id = do
