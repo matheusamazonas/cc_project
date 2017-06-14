@@ -1145,8 +1145,10 @@ A description of (mutual) deep skolemisation can be found in [1].
 > convertToGramType (TList t)            = GramListType nP (convertToGramType t)
 > convertToGramType (TVar i)             = GramIdType (Id nP ("_t" ++ (show i)))
 > convertToGramType (TBound i)           = GramIdType (Id nP ("_v" ++ (show i)))
+> convertToGramType (TSkolem i)          = GramIdType (Id nP ("_v" ++ (show i)))
 > convertToGramType (TFunc targs tret)   = GramFunType nP $ GramFunTypeAnnot (map convertToGramType targs) (convertToGramRetType tret)
 > convertToGramType (TForAll tbound t)   = GramForAllType nP (map (\i -> Id nP $ "_v" ++ (show i)) tbound) (convertToGramType t)
+
 
 > convertToGramRetType :: Type -> GramRetType
 > convertToGramRetType TVoid = GramVoidType nP
