@@ -36,10 +36,9 @@ column to 1 as well.
 >   | isSpace x = lexer (incSourceColumn p 1) xs
 >   | isAlpha x = lexText p (x:xs)
 >   | isDigit x = lexNum p (x:xs)
-> lexer p ('"':s) =  lexStringLit p lit <++> lexer pos rest 
->   where
->     (lit, rest) = readLiteral ([], s)
->     pos = (incSourceColumn p (2 + 2 * length lit))
+> lexer p ('"':s) = do
+>   (lit, rest, pos) <- readLiteral ([], s, p)
+>   lexStringLit p lit <++> lexer pos rest 
 > lexer p ('\'':'\\':'n':'\'':xs) = (TokenChar  '\n', p)          <:> lexer (incSourceColumn p 4) xs
 > lexer p ('\'':'\\':'t':'\'':xs) = (TokenChar  '\t', p)          <:> lexer (incSourceColumn p 4) xs
 > lexer p ('\'':c:'\'':xs)        = (TokenChar c, p)              <:> lexer (incSourceColumn p 3) xs                 
@@ -72,11 +71,11 @@ column to 1 as well.
 > lexer p (',':xs)                = (TokenComma , p)              <:> lexer (incSourceColumn p 1) xs
 > lexer p (x:_)                   = Left $ CompilationError Lexer ("Can't lex: " ++ show x) p
 
-> readLiteral :: (String, String) -> (String, String)
-> readLiteral (_, []) = error "yoooo"
-> readLiteral (l, ('\\':'\"':t)) = readLiteral (l ++ "\\\"", t)
-> readLiteral (l, ('\"':t)) = (l, t)
-> readLiteral (l, (c:t)) = readLiteral ((l++[c]), t)
+> readLiteral :: (String, String, SourcePos) -> Either CompilationError (String, String, SourcePos)
+> readLiteral (_, [], p) = Left $ CompilationError Lexer ("String literal missing closing quotes") p
+> readLiteral (l, ('\\':'\"':t), p) = readLiteral (l ++ "\\\"", t, incSourceColumn p 1)
+> readLiteral (l, ('\"':t), p) = Right (l, t, incSourceColumn p 1)
+> readLiteral (l, (c:t), p) = readLiteral ((l++[c]), t, incSourceColumn p 1)
 
 > listConst :: SourcePos -> PosToken
 > listConst p = (TokenOp ListConst, incSourceColumn p 1)
