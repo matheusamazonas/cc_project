@@ -4,7 +4,7 @@
 > import Control.Monad.State
 > import Control.Monad.Writer (WriterT, tell, execWriterT)
 > import Data.Char (ord, digitToInt)
-> import Data.List ((!!), find, genericLength, intersect, isPrefixOf, nub)
+> import Data.List ((!!), find, genericLength, intersect, isPrefixOf, nub, (\\))
 > import Text.Parsec.Pos (sourceLine, sourceColumn)
 > import Dependency (Capture(..), freeTypeVars)
 > import Grammar
@@ -38,7 +38,6 @@ Once implemented, generate = run generateProgram
 >   sequence_ $ map addGlobalFunc builtinNames
 >   sequence_ $ map (addGlobal . getVarId . GramDeclVar) globals
 >   sequence_ $ map (addGlobalFunc . getVarId . GramDeclFun) funcs
->   sequence_ $ replicate (length globals) $ write "nop"
 >   sequence_ $ map (generateFunDecl capts) funcs
 >   write "\n; initialise global variables"
 >   label "__init"
@@ -69,13 +68,9 @@ Once implemented, generate = run generateProgram
 > generateVariable (GramVarDeclVar (Id _ varId) expr) = do
 >   write $ "\n; initialise global: " ++ varId
 >   generateExpr expr
->   (_, store, _) <- lookupVar varId
->   write store
 > generateVariable (GramVarDeclType _ (Id _ varId) expr) = do
 >   write $ "\n; initialise global: " ++ varId
 >   generateExpr expr
->   (_, store, _) <- lookupVar varId
->   write store
 
 > addArgs :: [GramId] -> Environment ()
 > addArgs args = do
@@ -532,7 +527,7 @@ Exception handlers
 Post-processing
 
 > postprocess :: Code -> Code
-> postprocess = fixDoubleLabels
+> postprocess =  fixGlobals . fixDoubleLabels
 
 > fixDoubleLabels :: Code -> Code -- removes faulty situations such as: "fi_6: while_7: statement"
 > fixDoubleLabels code = 
@@ -568,6 +563,36 @@ Post-processing
 >           | length jlns == 2 && isPrefixOf "ldc " (head jlns) && last jlns == "jsr" = ["bsr " ++ drop 4 (head jlns)]
 >           | otherwise = jlns
 
+> fixGlobals :: Code -> Code
+> fixGlobals code = foldr (\(g,a) c -> replaceGlobal c g a) code (globalAddresses code)
+>   where
+>     firstAddress c = 17 + (addressesByProgram $ cleanCode c)
+>     globals c = map (\\ tag) $ filter (isPrefixOf tag) $ lines c
+>     globalAddresses c = zip (globals c) [firstAddress (lines c)..]
+>     tag = "; initialise global: "
+
+> cleanCode :: [String] -> [String]
+> cleanCode = removeEmptyLines . dropLabels . removeLineComments . removeSimpleComments
+>   where
+>     removeLineComments = (filter (\x -> not (isPrefixOf ";" x)))
+>     removeSimpleComments = (map (takeWhile (/= ';')))
+>     dropLabels = map (reverse . takeWhile (/= ':') . reverse)
+>     removeEmptyLines = filter (\x -> (x /= ""))
+
+> addressesByProgram :: [String] -> Int
+> addressesByProgram [] = 0
+> addressesByProgram (x:xs) = addressesByInst x + addressesByProgram xs
+
+> addressesByInst :: String -> Int
+> addressesByInst ('$':'_':_) = 2
+> addressesByInst s = length (words (takeWhile (/= ';') s))
+
+> replaceGlobal :: Code -> String -> Int -> Code
+> replaceGlobal code global address = unlines . map (replace global) $ lines code
+>   where
+>     replace g l
+>       | l == "$_" ++ g = "ldc " ++ show address ++ " ; load global " ++ g
+>       | otherwise = l 
 
 Scope handlers
 
@@ -596,9 +621,9 @@ Variable handlers
 > addGlobal :: Id -> Environment ()
 > addGlobal id = do
 >   (((d,v):ss), i) <- get
->   let loadIns = "ldc " ++ show (d+1) ++ " ; " ++ id ++ "\nlda 0"
->       storeIns = "ldc " ++ show (d+1) ++ " ; " ++ id ++ "\nsta 0"
->       addressIns = "ldc " ++ show (d+1) ++ " ; " ++ id
+>   let loadIns = "$_" ++ id ++ "\nlda 0"
+>       storeIns = "$_" ++ id ++ "\nsta 0"
+>       addressIns = "$_" ++ id
 >   put ((d+1,(id, (loadIns, storeIns, addressIns)):v):ss, i)
 
 > addGlobalFunc :: Id -> Environment ()
