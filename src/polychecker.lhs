@@ -136,8 +136,7 @@ test more complicated ones than this
 >   ds <- inferDeclsBody ds
 >   if any isFunDecl ds then generalise vs
 >   else return ()
->   ds <- inferDeclsPost ds
->   return ds
+>   inferDeclsPost ds
 >   where inferDeclsHeader [] = return []
 >         inferDeclsHeader (decl:decls) = do
 >           v <- case decl of
@@ -254,7 +253,7 @@ test more complicated ones than this
 >         replErr var = replaceErrorType ("Variable out of scope: " ++ var) ("Recursive variable definition detected: " ++ var)
 
 > inferFunDeclBody :: GramFuncDecl -> Environment GramFuncDecl
-> inferFunDeclBody fd@(GramFuncDecl id@(Id p i) fargs ftypes stmts) = do 
+> inferFunDeclBody (GramFuncDecl id@(Id p i) fargs ftypes stmts) = do 
 >   fid <- getVarId id
 >   tfun <- getVarType id
 >   let TFunc arglist vret = tfun
@@ -285,21 +284,20 @@ test more complicated ones than this
 ===============================================================================
 
 > inferVarDeclPost :: GramVarDecl -> Environment GramVarDecl
-> inferVarDeclPost (GramVarDeclVar vId expr) = do
->   t <- getVarType vId
->   return $ GramVarDeclType (convertToGramType t) vId expr
-> inferVarDeclPost (GramVarDeclType _ vId expr) = do
->   t <- getVarType vId
->   return $ GramVarDeclType (convertToGramType t) vId expr
+> inferVarDeclPost (GramVarDeclVar vid expr) = do
+>   t <- getVarType vid
+>   return $ GramVarDeclType (convertToGramType t) vid expr
+> inferVarDeclPost (GramVarDeclType _ vid expr) = do
+>   t <- getVarType vid
+>   return $ GramVarDeclType (convertToGramType t) vid expr
 
 > inferFunDeclPost :: GramFuncDecl -> Environment GramFuncDecl
-> inferFunDeclPost fd@(GramFuncDecl id fargs _ stmts) = do
+> inferFunDeclPost (GramFuncDecl id fargs _ stmts) = do
 >   tfun <- getVarType id
 >   let ftypes = [funType tfun]
 >   return $ GramFuncDecl id fargs ftypes stmts
->   where funType (TFunc targs tret) = GramFunTypeAnnot (toFTypes targs) (retType tret)
+>   where funType (TFunc targs tret) = GramFunTypeAnnot (map convertToGramType targs) (retType tret)
 >         funType (TForAll _ t) = funType t
->         toFTypes = map convertToGramType
 >         retType TVoid = GramVoidType nP
 >         retType t = GramRetType $ convertToGramType t
 
@@ -326,18 +324,18 @@ A description of (mutual) deep skolemisation can be found in [1].
 > inferStmtBlock p [] texp = do
 >   return (DoesNotReturn, [])
 > inferStmtBlock _ (stmt:stmts) texp = do 
->   (p, tret, stmt) <- inferStmt stmt texp
->   case tret of 
+>   (p, tret1, stmt) <- inferStmt stmt texp
+>   case tret1 of 
 >     DoesNotReturn    -> do
->       (tret, stmts) <- inferStmtBlock p stmts texp
->       return (tret, stmt:stmts)
+>       (tret2, stmts) <- inferStmtBlock p stmts texp
+>       return (tret2, stmt:stmts)
 >     AlwaysReturns    ->
 >       if null stmts then return $ (AlwaysReturns, [stmt])
 >       else throwError $ CompilationError TypeChecker ("Unreachable code detected") p
 >     SometimesReturns -> do
 >       texp2 <- expectedSubtype texp
->       (tret, stmts) <- inferStmtBlock p stmts texp2
->       case tret of
+>       (tret2, stmts) <- inferStmtBlock p stmts texp2
+>       case tret2 of
 >         DoesNotReturn -> return (SometimesReturns, stmt:stmts)
 >         AlwaysReturns -> do
 >           addErrorDesc "Inconsistent return types: " $ equivalent p texp texp2 
@@ -403,7 +401,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   if vid < 0 then throwError $ CompilationError TypeChecker ("Cannot override built-in function " ++ i) pos
 >   else do
 >     tfield <- traverseFields fields p t
->     checkTypePoly e tfield
+>     e <- checkTypePoly e tfield
 >     generalise [tfield]
 >     return (p, DoesNotReturn, GramAttr p (Var id fields) e)
 > inferStmt (GramStmtFuncDecl fundecl) texp = do -- let func = funcbody, same as global function declaration
@@ -465,8 +463,8 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   return $ GramUnary p op e
 > inferExpr orig@(GramExpId (Var vid@(Id p i) fields)) t = do
 >   vart <- getVarType vid
->   vart <- traverseFields fields p vart
->   assertType p vart t
+>   tfield <- traverseFields fields p vart
+>   assertType p tfield t
 >   return orig
 > inferExpr (GramExpFunCall funcall) t = do
 >   (p,i,tret,funcall) <- inferFunCall funcall t
@@ -572,7 +570,6 @@ A description of (mutual) deep skolemisation can be found in [1].
 >           t <- convertGramType t
 >           return $ GramRetType t
 >         convertRetType (GramVoidType p) = return $ GramVoidType p
-> postDecorateFunDecl a = return a
 
 > postDecorateBlock :: [GramStmt] -> Environment [GramStmt]
 > postDecorateBlock [] = return []
