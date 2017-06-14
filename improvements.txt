@@ -1,16 +1,7 @@
-Extension:
-- higher-order functions + type inference
-- possibly: lambda expressions (if so, look at closures and value restriction online)
-
-Desirable little improvements:
-- test error when print, equals etc. used on functions
-
 Bigger improvements:
 - only include actually-used parts of the standard library 
-- type check error function
 
 Possible little improvements:
 - string literals inside string literals "example: \"literal\" here"
 - list literals (write [1,2,3] instead of 1:2:3:[])
 - for loops (convert to while loop in code gen)
-- a way to output strings/characters without surrounding " and ' (output? display?)

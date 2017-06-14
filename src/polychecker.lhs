@@ -22,7 +22,7 @@
 
 > data Expected t = Infer t | Check t
 
-> data Returns = DoesNotReturn | SometimesReturns | AlwaysReturns
+> data Returns = DoesNotReturn | SometimesReturns | AlwaysReturns | ThrowsError
 >   deriving (Show, Eq)
 
 > type SubList = [(VId, Type)]
@@ -252,6 +252,7 @@ Called with inferProg, returning only the decorated tree.
 >   popScope
 >   case tret of 
 >     DoesNotReturn -> assertType p TVoid texp
+>     ThrowsError   -> assertType p TVoid texp
 >     SometimesReturns -> do
 >       vret <- convert vret
 >       if vret == TVoid then return ()
@@ -315,6 +316,9 @@ A description of (mutual) deep skolemisation can be found in [1].
 >     DoesNotReturn    -> do
 >       (tret2, stmts) <- inferStmtBlock p stmts texp
 >       return (tret2, stmt:stmts)
+>     ThrowsError      -> 
+>       if null stmts then return $ (ThrowsError, [stmt])
+>       else throwError $ CompilationError TypeChecker ("Unreachable code detected") p
 >     AlwaysReturns    ->
 >       if null stmts then return $ (AlwaysReturns, [stmt])
 >       else throwError $ CompilationError TypeChecker ("Unreachable code detected") p
@@ -329,6 +333,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >         SometimesReturns -> do
 >           addErrorDesc "Inconsistent return types: " $ equivalent p texp texp2 
 >           return (SometimesReturns, stmt:stmts)
+>         ThrowsError -> return (AlwaysReturns, stmt:stmts)
 
 > inferStmt :: GramStmt -> Expected RhoType -> Environment (SourcePos, Returns, GramStmt)
 > inferStmt (GramIf p cond tr fa) texp = do -- if statement as described in sec. 7.1 [1]
@@ -343,18 +348,29 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   popScope
 >   let stmt = GramIf p cond tr fa
 >   if ret1 == DoesNotReturn then (
->     if ret2 == DoesNotReturn then return (p, DoesNotReturn, stmt)
+>     if ret2 == DoesNotReturn || ret2 == ThrowsError then return (p, DoesNotReturn, stmt)
 >     else do
 >       propagateSubtype expfa texp
 >       return (p, SometimesReturns, stmt) )
->   else if ret2 == DoesNotReturn then do
->       propagateSubtype exptr texp
->       return (p, SometimesReturns, stmt)
->     else do
->       addErrorDesc "Inconsistent return types: " $ equivalent p exptr expfa 
->       propagateSubtype exptr texp
->       if (ret1 == AlwaysReturns && ret2 == AlwaysReturns) then return (p, AlwaysReturns, stmt)
->       else return (p, SometimesReturns, stmt)
+>   else 
+>     if ret1 == ThrowsError then ( 
+>       if ret2 == DoesNotReturn || ret2 == ThrowsError then return (p, ret2, stmt)
+>       else do
+>         propagateSubtype expfa texp
+>         return (p, ret2, stmt) )
+>     else 
+>       if ret2 == DoesNotReturn then do
+>         propagateSubtype exptr texp
+>         return (p, SometimesReturns, stmt)
+>       else 
+>         if ret2 == ThrowsError then do
+>           propagateSubtype exptr texp
+>           return (p, AlwaysReturns, stmt)
+>         else do
+>           addErrorDesc "Inconsistent return types: " $ equivalent p exptr expfa 
+>           propagateSubtype exptr texp
+>           if (ret1 == AlwaysReturns && ret2 == AlwaysReturns) then return (p, AlwaysReturns, stmt)
+>           else return (p, SometimesReturns, stmt)
 > inferStmt (GramWhile p cond lp) texp = do -- typed equivalently to if(cond) { lp } else { }
 >   cond <- addErrorDesc "Non-boolean expression used as loop condition: " $ inferExpr cond $ Check TBool
 >   explp <- expectedSubtype texp
@@ -362,7 +378,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >   (tret, lp) <- inferStmtBlock p lp explp
 >   popScope
 >   let stmt = GramWhile p cond lp
->   if tret == DoesNotReturn then return (p, DoesNotReturn, stmt)
+>   if tret == DoesNotReturn || tret == ThrowsError then return (p, DoesNotReturn, stmt)
 >   else do
 >     propagateSubtype explp texp
 >     return (p, SometimesReturns, stmt)
@@ -400,7 +416,11 @@ A description of (mutual) deep skolemisation can be found in [1].
 > inferStmt (GramStmtFunCall funcall) texp = do -- return value is irrelevant, just type-check argument types
 >   v <- fresh
 >   (p,_,_,funcall) <- inferFunCall funcall $ Infer v
->   return (p, DoesNotReturn, GramStmtFunCall funcall)
+>   return (p, functionCallRetType funcall, GramStmtFunCall funcall)
+>   where functionCallRetType (GramFunCall (Id _ i) _) = checkIfError i
+>         functionCallRetType (GramOverloadedFunCall _ (Id _ i) _) = checkIfError i
+>         checkIfError "error" = ThrowsError
+>         checkIfError _ = DoesNotReturn
 
 ===============================================================================
  Type inference/checking algorithm M (Damas-Hindley-Milner) - stage 2b
