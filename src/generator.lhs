@@ -528,7 +528,7 @@ Exception handlers
 Post-processing
 
 > postprocess :: Code -> Code
-> postprocess =  fixGlobals . fixDoubleLabels
+> postprocess =  fixGlobals . fixDoubleLabels . fixEmptyLabels
 
 > fixDoubleLabels :: Code -> Code -- removes faulty situations such as: "fi_6: while_7: statement"
 > fixDoubleLabels code = 
@@ -546,6 +546,13 @@ Post-processing
 >               Nothing  -> ln
 >           | otherwise = ln
 >         subbedInstructions = ["bra ", "brf ", "brt ", "bsr ", "ldc "]
+
+> fixEmptyLabels :: Code -> Code -- removes situations such as "fi_6: fi_7:" when returning from nested if
+> fixEmptyLabels code = unlines $ map fixLine $ lines code
+>   where fixLine ln
+>           | hasJustLabels ln = ln ++ "nop"
+>           | otherwise = ln
+>         hasJustLabels ln = all (\w -> last w == ':') $ words ln
 
 > fixHeapFunctionCalls :: Code -> Code                                                            -- a function pointer is a tuple (code address, environment).
 > fixHeapFunctionCalls load = let lns = lines load in init $ unlines $ fixHeapFunctionCalls' lns  -- we need this for function variables, but for global functions
