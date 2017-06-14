@@ -92,21 +92,7 @@ Called with inferProg, returning only the decorated tree.
  Known issues / improvements
 ===============================================================================
 
-function pr1(x) {
-  function doit() {
-    print(x);
-  }
-  return doit;
-}
-
-function main() {
-  var f = pr1(1);
-  f();
-}
-
-f() function call not annotated; annotate function calls with their capture
-(which needs to be propagated throughout polychecker)
-test more complicated ones than this
+-
 
 
 ===============================================================================
