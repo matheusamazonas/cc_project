@@ -1240,11 +1240,12 @@ A description of (mutual) deep skolemisation can be found in [1].
 ===============================================================================
 
 > initEnv :: EnvType
-> initEnv = ([(-2, tprint), (-4, tdisplay), (-6, tempty), (-7, tchr), (-8, tord), (-9, terror)],
->            [[("print", -2), ("display", -4), ("isEmpty", -6), ("chr", -7), ("ord", -8), ("error", -9)]],0)
+> initEnv = ([(-2, tprint), (-4, tprintln), (-6, tdisplay), (-8, tempty), (-9, tchr), (-10, tord), (-11, terror)],
+>            [[("print", -2), ("println", -4), ("display", -6), ("isEmpty", -8), ("chr", -9), ("ord", -10), ("error", -11)]],0)
 >   where tprint = TForAll [-1] $ TFunc [TBound (-1)] TVoid
->         tdisplay = TForAll [-3] $ TFunc [TBound (-3)] TVoid
->         tempty = TForAll [-5] $ TFunc [TList $ TBound (-5)] TBool
+>         tprintln = TForAll [-3] $ TFunc [TBound (-3)] TVoid
+>         tdisplay = TForAll [-5] $ TFunc [TBound (-5)] TVoid
+>         tempty = TForAll [-7] $ TFunc [TList $ TBound (-7)] TBool
 >         tchr = TFunc [TInt] TChar
 >         tord = TFunc [TChar] TInt
 >         terror = TFunc [TList TChar] TVoid

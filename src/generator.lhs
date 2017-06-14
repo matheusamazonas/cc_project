@@ -123,15 +123,15 @@ Once implemented, generate = run generateProgram
 >   mapM_ typeFrame $ reverse ts
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
->   write $ fixHeapFunctionCalls $ load ++ "\nldh -1" -- actual function label
->   write $ "jsr\najs " ++ show (-1 - length args - length ts) 
+>   write $ collapseConstantBranches $ (fixHeapFunctionCalls $ load ++ "\nldh -1") ++ "\njsr" -- actual function label
+>   write $ "ajs " ++ show (-1 - length args - length ts) 
 > generateFunCall (GramFunCall (Id _ funId) args) = do
 >   (load, _, _) <- lookupVar funId
 >   write $ fixHeapFunctionCalls $ load ++ "\nldh 0" -- load environment
 >   let rev_args = reverse args
 >   sequence $ map generateExpr rev_args
->   write $ fixHeapFunctionCalls $ load ++ "\nldh -1" -- actual function label
->   write $ "jsr\najs " ++ show (-1 - length args) 
+>   write $ collapseConstantBranches $ (fixHeapFunctionCalls $ load ++ "\nldh -1") ++ "\njsr" -- actual function label
+>   write $ "ajs " ++ show (-1 - length args) 
 
 > generateStmtBlock :: Capture -> [GramStmt] -> Environment [Environment ()]
 > generateStmtBlock capt [] = return []
@@ -308,15 +308,15 @@ list: TF = (_list, TF_element)
 tuple: TF = (_tuple, (TF_fst, TF_snd))
 
 > typeFrame :: GramType -> Environment ()
-> typeFrame (GramBasicType _ CharType) = write "ldc 3\nldc 0\nstmh 2"
-> typeFrame (GramBasicType _ IntType)  = write "ldc 5\nldc 0\nstmh 2"
-> typeFrame (GramBasicType _ BoolType) = write "ldc 7\nldc 0\nstmh 2"
+> typeFrame (GramBasicType _ CharType) = write "ldc 3 ; char type frame\nldc 0\nstmh 2"
+> typeFrame (GramBasicType _ IntType)  = write "ldc 5 ; int type frame\nldc 0\nstmh 2"
+> typeFrame (GramBasicType _ BoolType) = write "ldc 7 ; bool type frame\nldc 0\nstmh 2"
 > typeFrame (GramListType _ t) = do
->   write "ldc 9"
+>   write "ldc 9 ; list type frame"
 >   typeFrame t
 >   write "stmh 2"
 > typeFrame (GramTupleType _ t1 t2) = do
->   write "ldc 11"
+>   write "ldc 11 ; tuple type frame"
 >   typeFrame t1
 >   typeFrame t2
 >   write "stmh 2\nstmh 2"
@@ -327,6 +327,7 @@ tuple: TF = (_tuple, (TF_fst, TF_snd))
 >   | otherwise = write "bra __exc_unknown_error"
 >   where repl "bra __exc_unknown_error" = "ldc 13\nldc 0\nstmh 2" -- catches error in case of e.g. empty list of type [_v1]
 >         repl ld = ld                                             -- and replaces with more specific runtime exception if faulty
+> typeFrame _ = write "ldc 15 ; function type frame\nldc 0\nstmh 2"
 
 > addTypeFrameArgs :: Int -> [GramType] -> Environment Int
 > addTypeFrameArgs numArgs ts = do
@@ -348,7 +349,7 @@ Standard library
 > generatePrint :: Maybe GramType -> Environment ()
 > generatePrint Nothing = do
 >   write "print: lds -2\nldh -1\nldr PC\nadd\nstr PC"
->   write "bra __print_char\nbra __print_int\nbra __print_bool\nbra __print_list\nbra __print_tuple\nbra __exc_untyped_variable"
+>   write "bra __print_char\nbra __print_int\nbra __print_bool\nbra __print_list\nbra __print_tuple\nbra __exc_untyped_variable\nbra __exc_unknown_type_frame_print"
 > generatePrint (Just (GramBasicType _ IntType))  = write "__print_int: lds -1\ntrap 0\nret"
 > generatePrint (Just (GramBasicType _ CharType)) = do
 >   label "__print_char"
@@ -399,11 +400,18 @@ Standard library
 >   printChar ')'
 >   write "ret"   
 
+> generatePrintln :: Environment ()
+> generatePrintln = do
+>   write "\n; define println"
+>   write "println: lds -2\nlds -2\nbsr print\najs -2"
+>   printChar '\n'
+>   write "ret"
+
 > generateDisplay :: Environment ()
 > generateDisplay = do
 >   write "\n; define display"
 >   write "display: lds -2\nldh -1\nldr PC\nadd\nstr PC"
->   write "bra __display_char\nbra __exc_display\nbra __exc_display\nbra __display_list\nbra __exc_display\nbra __exc_display"
+>   write "bra __display_char\nbra __exc_display\nbra __exc_display\nbra __display_list\nbra __exc_display\nbra __exc_display\nbra __exc_unknown_type_frame_print"
 >   write "__display_char: lds -1\ntrap 1\nret"
 >   write "__display_list: lds -2\nldh 0\nldh -1\nldc 3\neq\nbrf __exc_display"
 >   write "lds -1\nbrf __display_str_post" -- check for empty string
@@ -425,11 +433,12 @@ Standard library
 > callEquals t@(GramIdType _) = do
 >   typeFrame t
 >   write "lds -2\nlds -2\nbsr __eq\najs -5\nldr RR"
+> callEquals _ = write "bra __exc_unknown_type_frame_eq"
 
 > generateEquals :: Maybe GramType -> Environment ()
 > generateEquals Nothing = do
 >   write "__eq: lds -3\nldh -1\nldr PC\nadd\nstr PC"
->   write "bra __eq_char\nbra __eq_int\nbra __eq_bool\nbra __eq_list\nbra __eq_tuple\nbra __exc_untyped_variable"
+>   write "bra __eq_char\nbra __eq_int\nbra __eq_bool\nbra __eq_list\nbra __eq_tuple\nbra __exc_untyped_variable\nbra __exc_unknown_type_frame_eq"
 > generateEquals (Just (GramBasicType _ CharType)) = write "__eq_char: lds -2\nlds -2\neq\nstr RR\nret"
 > generateEquals (Just (GramBasicType _ IntType))  = write "__eq_int: lds -2\nlds -2\neq\nstr RR\nret"
 > generateEquals (Just (GramBasicType _ BoolType)) = do
@@ -463,7 +472,7 @@ Standard library
 > generateChrOrd = do
 >   write "\n; define chr"
 >   write "chr: lds -1\nstr RR\nret\n"
->   write "\n;define ord"
+>   write "\n; define ord"
 >   write "ord: lds -1\nstr RR\nret\n"
 
 > generateError :: Environment ()
@@ -471,22 +480,25 @@ Standard library
 >   write "\n; define error"
 >   label "error"
 >   typeFrame $ GramListType undefined $ GramBasicType undefined CharType
->   write "lds -2\nldc 10\ntrap 1\nbsr print\nhalt"
+>   write "lds -2\nldc 10 ; newline\ntrap 1\nbsr print\nhalt"
 
 
 Standard library handlers
 
-> builtinNames = ["print", "display", "isEmpty", "chr", "ord", "error"]
+> builtinNames = ["print", "println", "display", "isEmpty", "chr", "ord", "error"]
 
 > builtins = let und = undefined in
 >   [polyBuildIn "print" generatePrint,
 >    polyBuildIn "==" generateEquals,
+>    generatePrintln,
 >    generateDisplay,
 >    generateIsEmpty,
 >    generateChrOrd,
 >    generateError,
 >    runTimeException "__exc_empty_list_traversal" "empty list traversed",
 >    runTimeException "__exc_untyped_variable" "could not resolve overloading for print",
+>    runTimeException "__exc_unknown_type_frame_print" "functions cannot be printed or displayed",
+>    runTimeException "__exc_unknown_type_frame_eq" "equality is not defined for functions",
 >    runTimeException "__exc_display" "display can only be used for characters and character lists",
 >    runTimeException "__exc_unknown_error" "an unknown error occurred"]
 
@@ -547,6 +559,15 @@ Post-processing
 >               (take (length lns - 4) lns) ++ [lns !! ind]                                       -- we get rid of the tuple creation and extract 
 >           | otherwise = lns                                                                     -- only the line we need (either code address or environment)
 
+> collapseConstantBranches :: Code -> Code
+> collapseConstantBranches call = 
+>   let lns = lines call in
+>   let (prep, jump) = splitAt (length lns - 2) lns in
+>   init $ unlines $ prep ++ collapseConstantBranches' jump -- the init, here and in fixHeapFunctionCalls,
+>   where collapseConstantBranches' jlns                    -- removes a trailing newline added by unlines
+>           | length jlns == 2 && isPrefixOf "ldc " (head jlns) && last jlns == "jsr" = ["bsr " ++ drop 4 (head jlns)]
+>           | otherwise = jlns
+
 
 Scope handlers
 
@@ -567,17 +588,17 @@ Variable handlers
 > addVar :: Id -> Environment ()
 > addVar id = do
 >   (((d,v):ss), i) <- get
->   let loadIns = "ldl " ++ show d
->       storeIns = "stl " ++ show d
->       addressIns = "ldla " ++ show d
+>   let loadIns = "ldl " ++ show d ++ " ; " ++ id
+>       storeIns = "stl " ++ show d ++ " ; " ++ id
+>       addressIns = "ldla " ++ show d ++ " ; " ++ id
 >   put ((d+1,(id, (loadIns, storeIns, addressIns)):v):ss, i)
 
 > addGlobal :: Id -> Environment ()
 > addGlobal id = do
 >   (((d,v):ss), i) <- get
->   let loadIns = "ldc " ++ show (d+1) ++ "\nlda 0"
->       storeIns = "ldc " ++ show (d+1) ++ "\nsta 0"
->       addressIns = "ldc " ++ show (d+1)
+>   let loadIns = "ldc " ++ show (d+1) ++ " ; " ++ id ++ "\nlda 0"
+>       storeIns = "ldc " ++ show (d+1) ++ " ; " ++ id ++ "\nsta 0"
+>       addressIns = "ldc " ++ show (d+1) ++ " ; " ++ id
 >   put ((d+1,(id, (loadIns, storeIns, addressIns)):v):ss, i)
 
 > addGlobalFunc :: Id -> Environment ()
@@ -591,9 +612,9 @@ Variable handlers
 > addArg :: Id -> Integer -> Environment ()
 > addArg varId id = do
 >   (((d,v):ss), i) <- get
->   let loadIns = "ldl " ++ show id
->       storeIns = "stl " ++ show id
->       addressIns = "ldla " ++ show id
+>   let loadIns = "ldl " ++ show id ++ " ; " ++ varId
+>       storeIns = "stl " ++ show id ++ " ; " ++ varId
+>       addressIns = "ldla " ++ show id ++ " ; " ++ varId
 >   put ((d,(varId, (loadIns, storeIns, addressIns)):v):ss, i)
 
 > lookupVar :: Id -> Environment (Code, Code, Code)
@@ -620,8 +641,6 @@ Variable handlers
 
 
 Capture and environment handlers
-
-data Capture = Capture GramId [GramId] [Capture]
 
 > getCapture :: [Capture] -> GramId -> Capture
 > getCapture capts fid = capt

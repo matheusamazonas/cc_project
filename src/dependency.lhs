@@ -137,7 +137,7 @@ so that they can be matched independently of nesting and branching depth.
 >         getName (GramDeclVar (GramVarDeclVar    vid _)) = vid
 
 > builtIns :: [GramId]
-> builtIns = map bi ["print", "display", "isEmpty", "chr", "ord", "error"]
+> builtIns = map bi ["print", "println", "display", "isEmpty", "chr", "ord", "error"]
 >   where bi = Id $ newPos "<builtin>" 0 0
 
 
