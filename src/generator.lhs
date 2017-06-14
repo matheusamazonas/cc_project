@@ -474,6 +474,7 @@ Standard library
 > generateError = do
 >   write "\n; define error"
 >   label "error"
+>   printText "The code threw a runtime error: "
 >   typeFrame $ GramListType undefined $ GramBasicType undefined CharType
 >   write "lds -2\nldc 10 ; newline\ntrap 1\nbsr print\nhalt"
 
