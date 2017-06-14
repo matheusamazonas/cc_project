@@ -1,5 +1,6 @@
 Bigger improvements:
 - only include actually-used parts of the standard library 
+- convert function calls' syntax to allow for calling expressions (counter.fst(), ret_fun()(), etc.)
 
 Possible little improvements:
 - list literals (write [1,2,3] instead of 1:2:3:[])
