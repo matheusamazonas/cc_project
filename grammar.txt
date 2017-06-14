@@ -3,7 +3,7 @@
 SPL = Decl+
 Decl = VarDecl | FunDecl
 VarDecl = (Type | 'var') id '=' Exp ';'
-FunDecl = 'function' id FunDeclTail '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
+FunDecl = 'function' id '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
 RetType = Type | 'Void'
 FunType = [ FTypes ] '->' RetType
 FTypes = Type [ FTypes ]
