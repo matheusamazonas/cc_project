@@ -683,6 +683,7 @@ A description of (mutual) deep skolemisation can be found in [1].
 >         typeAnnotation _ _ = return []
 >         splitFunc (TFunc targs tret) = (targs, tret)
 >         splitFunc (TForAll _ t) = splitFunc t
+> postDecorateFunCall funcall@(GramFunCall _ _) = error $ show funcall
 
 
 
