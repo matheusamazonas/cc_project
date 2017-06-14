@@ -7,9 +7,6 @@ Desirable little improvements:
 
 Bigger improvements:
 - only include actually-used parts of the standard library 
-- move data segment to space after code segment
-  x placeholder labels into string postproc to resolve statically?
-  x count #instructions + #arguments to find end of code block
 - type check error function
 
 Possible little improvements:
