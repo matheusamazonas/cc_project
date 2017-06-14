@@ -2,6 +2,5 @@ Bigger improvements:
 - only include actually-used parts of the standard library 
 
 Possible little improvements:
-- string literals inside string literals "example: \"literal\" here"
 - list literals (write [1,2,3] instead of 1:2:3:[])
 - for loops (convert to while loop in code gen)

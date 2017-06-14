@@ -38,7 +38,7 @@ column to 1 as well.
 >   | isDigit x = lexNum p (x:xs)
 > lexer p ('"':s) =  lexStringLit p lit <++> lexer pos rest 
 >   where
->     (lit, (_:rest)) = span (/= '\"') s
+>     (lit, rest) = readLiteral ([], s)
 >     pos = (incSourceColumn p (2 + 2 * length lit))
 > lexer p ('\'':'\\':'n':'\'':xs) = (TokenChar  '\n', p)          <:> lexer (incSourceColumn p 4) xs
 > lexer p ('\'':'\\':'t':'\'':xs) = (TokenChar  '\t', p)          <:> lexer (incSourceColumn p 4) xs
@@ -72,6 +72,12 @@ column to 1 as well.
 > lexer p (',':xs)                = (TokenComma , p)              <:> lexer (incSourceColumn p 1) xs
 > lexer p (x:_)                   = Left $ CompilationError Lexer ("Can't lex: " ++ show x) p
 
+> readLiteral :: (String, String) -> (String, String)
+> readLiteral (_, []) = error "yoooo"
+> readLiteral (l, ('\\':'\"':t)) = readLiteral (l ++ "\\\"", t)
+> readLiteral (l, ('\"':t)) = (l, t)
+> readLiteral (l, (c:t)) = readLiteral ((l++[c]), t)
+
 > listConst :: SourcePos -> PosToken
 > listConst p = (TokenOp ListConst, incSourceColumn p 1)
 
@@ -82,6 +88,7 @@ column to 1 as well.
 >     closeSquareB = (TokenCloseSquareB, incSourceColumn p 3)
 > lexStringLit p ('\\':'n':cs) = (TokenChar '\n', p) <:> listConst p <:> lexStringLit p cs
 > lexStringLit p ('\\':'t':cs) = (TokenChar '\t', p) <:> listConst p <:> lexStringLit p cs
+> lexStringLit p ('\\':'\\':cs) = (TokenChar '\\', p) <:> listConst p <:> lexStringLit p cs
 > lexStringLit p ('\\':'\"':cs) = (TokenChar '\"', p) <:> listConst p <:> lexStringLit p cs
 > lexStringLit p (c:cs) = (TokenChar c, p) <:> listConst p <:> lexStringLit p cs
 
