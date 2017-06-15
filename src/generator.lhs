@@ -29,7 +29,7 @@ Once implemented, generate = run generateProgram
 > generate :: [Capture] -> Gram -> Either CompilationError Code
 > generate capts g
 >   | hasMain g = pure $ postprocess $ run (generateProgram capts) g
->   | otherwise = Left $ CompilationError TypeChecker ("Program doesn't contain a function main()") undefined
+>   | otherwise = Left $ CompilationError CodeGeneration ("Program doesn't contain a function main()") undefined
 
 > generateProgram :: [Capture] -> Gram -> Environment ()
 > generateProgram capts g = do 
