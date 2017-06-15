@@ -4,7 +4,8 @@
 > import Control.Monad.State
 > import Control.Monad.Writer (WriterT, tell, execWriterT)
 > import Data.Char (ord, digitToInt)
-> import Data.List ((!!), find, genericLength, intersect, isPrefixOf, nub, (\\))
+> import Data.List ((!!), find, genericLength, intersect, isPrefixOf, nub, (\\), isSuffixOf)
+> import Data.List.Utils (replace)
 > import Text.Parsec.Pos (sourceLine, sourceColumn)
 > import Dependency (Capture(..), freeTypeVars)
 > import Grammar
@@ -580,11 +581,10 @@ Post-processing
 >     tag = "; initialise global: "
 
 > cleanCode :: [String] -> [String]
-> cleanCode = removeEmptyLines . dropLabels . removeLineComments . removeSimpleComments
+> cleanCode = removeEmptyLines . removeLineComments . removeSimpleComments
 >   where
 >     removeLineComments = (filter (\x -> not (isPrefixOf ";" x)))
 >     removeSimpleComments = (map (takeWhile (/= ';')))
->     dropLabels = map (reverse . takeWhile (/= ':') . reverse)
 >     removeEmptyLines = filter (\x -> (x /= ""))
 
 > addressesByProgram :: [String] -> Int
@@ -596,11 +596,9 @@ Post-processing
 > addressesByInst s = length (words (takeWhile (/= ';') s))
 
 > replaceGlobal :: Code -> String -> Int -> Code
-> replaceGlobal code global address = unlines . map (replace global) $ lines code
+> replaceGlobal code global address = replace ("$_" ++ global) lodadGlobal code
 >   where
->     replace g l
->       | l == "$_" ++ g = "ldc " ++ show address ++ " ; load global " ++ g
->       | otherwise = l 
+>     lodadGlobal = "ldc " ++ show address ++ " ; load global " ++ global
 
 Scope handlers
 
