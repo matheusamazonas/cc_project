@@ -52,7 +52,7 @@ so that they can be matched independently of nesting and branching depth.
 
 > declDeps :: VariableScopes -> GramDecl -> ((GramDecl, GramId, [GramId]), [Capture])
 > declDeps defs (GramDeclVar vardecl) = ((GramDeclVar vardecl, varname, deps), [])
->   where (varname, deps) = varDeclDeps defs vardecl
+>   where (varname, deps) = varDeclDeps (newFunc defs []) vardecl -- new scope needed so globals are not treated as locals
 > declDeps defs (GramDeclFun fundecl) = ((GramDeclFun fundecl, fid, deps), [capt])
 >   where (GramFuncDecl fid args annot stmts) = fundecl
 >         (capt, deps) = funcDeps defs fid args annot stmts
