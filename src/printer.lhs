@@ -33,23 +33,6 @@
 > printVar i (Var (Id _ varId) fields) = 
 >          	tb i ++ varId ++ printMany printField i fields
 
-> printOp :: Operation -> String
-> printOp Minus          = "-"
-> printOp Plus           = "+"
-> printOp Times          = "*"
-> printOp Division       = "/"
-> printOp LessThan       = "<"
-> printOp LessOrEqual    = "<="
-> printOp GreaterThan    = ">"
-> printOp GreaterOrEqual = ">="
-> printOp Equals         = "=="
-> printOp Different      = "!="
-> printOp LogicalOr      = "||"
-> printOp LogicalAnd     = "&&"
-> printOp LogicalNot     = "!"
-> printOp ListConst      = ":"
-> printOp Mod            = "%"
-
 > printGram :: Gram -> String
 > printGram decls = printMany printDecl 0 decls
 
@@ -83,7 +66,7 @@
 >           ++ printRetType 0 r 
 
 > printType :: Int -> Bool -> GramType -> String
-> printType i _ (GramBasicType _ t) = printBasicType i t
+> printType i _ (GramBasicType _ t) = tb i ++ show t
 > printType i _ (GramTupleType _ t1 t2) = tb i ++ "(" ++ printType 0 True t1 ++ ", " ++ printType 0 True t2 ++ ")"
 > printType i _ (GramListType _ t) = tb i ++ "[" ++ printType 0 True t ++ "]"
 > printType i _ (GramIdType (Id _ s)) = tb i ++ s
@@ -91,11 +74,6 @@
 > printType i True (GramFunType _ (GramFunTypeAnnot targs tret)) = tb i ++ printMany (\_ t -> printType 0 False t ++ " ") 0 targs ++ "-> " ++ printRetType 0 tret
 > printType i False (GramForAllType _ boundids t) = tb i ++ "(forall " ++ printMany (\_ (Id _ id) -> id ++ " ") 0 boundids ++ ". " ++ printType 0 True t ++ ")"
 > printType i True (GramForAllType _ boundids t) = tb i ++ "forall " ++ printMany (\_ (Id _ id) -> id ++ " ") 0 boundids ++ ". " ++ printType 0 True t
-
-> printBasicType :: Int -> BasicType -> String
-> printBasicType i IntType = tb i ++ "Int"
-> printBasicType i BoolType = tb i ++ "Bool"
-> printBasicType i CharType = tb i ++ "Char"
 
 > printFArgs :: Int -> [GramId] -> String
 > printFArgs i [] = ""
@@ -162,9 +140,9 @@
 > printExpr i (GramNum _ n)  = tb i ++ show n 
 > printExpr i (GramEmptyList _) = tb i ++ "[]"
 > printExpr i (GramExpTuple _ expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ ", " ++ printExpr 0 expr2 ++ ")"
-> printExpr i (GramOverloadedBinary _ t op expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ " /*" ++ printType 0 False t ++ "*/" ++ printOp op ++ " " ++ printExpr 0 expr2 ++ ")"
-> printExpr i (GramBinary _ op expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ " " ++ printOp op ++ " " ++ printExpr 0 expr2 ++ ")"
-> printExpr i (GramUnary _ op expr) = tb i ++ printOp op ++ printExpr 0 expr
+> printExpr i (GramOverloadedBinary _ t op expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ " /*" ++ printType 0 False t ++ "*/" ++ show op ++ " " ++ printExpr 0 expr2 ++ ")"
+> printExpr i (GramBinary _ op expr1 expr2) = tb i ++ "(" ++ printExpr 0 expr1 ++ " " ++ show op ++ " " ++ printExpr 0 expr2 ++ ")"
+> printExpr i (GramUnary _ op expr) = tb i ++ show op ++ printExpr 0 expr
 > printExpr i (GramExpFunCall call) = printFuncall i call
 > printExpr i (GramExpId var) = printVar i var
 
