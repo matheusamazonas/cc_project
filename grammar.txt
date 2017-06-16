@@ -3,7 +3,7 @@
 SPL = Decl+
 Decl = VarDecl | FunDecl
 VarDecl = (Type | 'var') id '=' Exp ';'
-FunDecl = 'function' id '(' [ FArgs ] ')' [ '::' FunType ] '{' VarDecl* Stmt+ '}'
+FunDecl = 'function' id '(' [ FArgs ] ')' [ '::' FunType ] '{' Stmt* '}'
 RetType = Type | 'Void'
 FunType = [ FTypes ] '->' RetType
 FTypes = Type [ FTypes ]
@@ -18,7 +18,9 @@ Stmt = 'if' '(' Exp ')' '{' Stmt* '}' [ 'else' '{' Stmt* '}' ]
 	| 'while' '(' Exp ')' '{' Stmt* '}'
 	| Stmt1
 	| 'return' [ Exp ] ';'
-Stmt1 = id (ArgList || AttribBody) ';'
+	| VarDecl
+	| FunDecl
+Stmt1 = id (ArgList | AttribBody) ';'
 AttribBody = [Field] '=' Exp
 Exp = Exp1 [ '||' Exp ]
 Epx1 = Exp2 [ '&&' Exp1 ]
@@ -26,7 +28,7 @@ Exp2 = Exp3 [ ('==' | '!=' | '<' | '<=' | '>' | '>=') Exp2 ]
 Exp3 = Exp4 [  ':' Exp3 ]
 Exp4 = Exp5 [ (('+' | '-') Exp5)* ]
 Exp5 = Exp6 [ (('*' | '/' | '%') Exp6)* ]
-Exp6 = [ ('!' | '-') ] Exp7
+Exp6 = [ ('!' | '-')* ] Exp7
 Exp7 = int | char | 'False' | 'True' | '[]' | Exp8 | Exp9 | StringLit
 Exp8 = id [Field | ArgList]
 Exp9 = '(' Exp [ ',' Exp ] ')'
