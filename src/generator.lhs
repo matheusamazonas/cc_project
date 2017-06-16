@@ -551,7 +551,7 @@ Post-processing
 > fixEmptyLabels :: Code -> Code -- removes situations such as "fi_6: fi_7:" when returning from nested if
 > fixEmptyLabels code = unlines $ map fixLine $ lines code
 >   where fixLine ln
->           | hasJustLabels ln = ln ++ "nop"
+>           | length ln >= 2 && hasJustLabels ln = ln ++ "nop"
 >           | otherwise = ln
 >         hasJustLabels ln = all (\w -> last w == ':') $ words ln
 
