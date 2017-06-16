@@ -88,7 +88,7 @@ Once implemented, generate = run generateProgram
 > generateFunDecl :: [Capture] -> GramFuncDecl -> Environment ()
 > generateFunDecl capts (GramFuncDecl id@(Id _ funId) args types stmts) = do
 >   let capt = getCapture capts id
->   write $ "\n; define function " ++ funId
+>   write $ "\n\n; define function " ++ funId
 >   pushScope
 >   label funId
 >   let argCounter = length args
@@ -209,7 +209,7 @@ Once implemented, generate = run generateProgram
 > generateExpr :: GramExp -> Environment ()
 > generateExpr (GramBool _ True) = write "ldc -1"
 > generateExpr (GramBool _ False) = write "ldc 0"
-> generateExpr (GramChar _ char) = write $ "ldc " ++ show (ord char)
+> generateExpr (GramChar _ char) = write $ "ldc " ++ show (ord char) ++ " ; character " ++ show char
 > generateExpr (GramNum _ i) = write $ "ldc " ++ show i
 > generateExpr (GramEmptyList _) = write "ldc 0" -- null pointer
 > generateExpr (GramExpTuple _ e1 e2) = do
@@ -398,14 +398,14 @@ Standard library
 
 > generatePrintln :: Environment ()
 > generatePrintln = do
->   write "\n; define println"
+>   write "\n\n; define println"
 >   write "println: lds -2\nlds -2\nbsr print\najs -2"
 >   printChar '\n'
 >   write "ret"
 
 > generateDisplay :: Environment ()
 > generateDisplay = do
->   write "\n; define display"
+>   write "\n\n; define display"
 >   write "display: lds -2\nldh -1\nldr PC\nadd\nstr PC"
 >   write "bra __display_char\nbra __exc_display\nbra __exc_display\nbra __display_list\nbra __exc_display\nbra __exc_display\nbra __exc_unknown_type_frame_print"
 >   write "__display_char: lds -1\ntrap 1\nret"
@@ -461,23 +461,23 @@ Standard library
 
 > generateIsEmpty :: Environment ()
 > generateIsEmpty = do
->   write "\n; define isEmpty"
->   write "isEmpty: lds -1\nldc 0\neq\nstr RR\nret\n"
+>   write "\n\n; define isEmpty"
+>   write "isEmpty: lds -1\nldc 0\neq\nstr RR\nret"
 
 > generateChrOrd :: Environment ()
 > generateChrOrd = do
->   write "\n; define chr"
->   write "chr: lds -1\nstr RR\nret\n"
->   write "\n; define ord"
->   write "ord: lds -1\nstr RR\nret\n"
+>   write "\n\n; define chr"
+>   write "chr: lds -1\nstr RR\nret"
+>   write "\n\n; define ord"
+>   write "ord: lds -1\nstr RR\nret"
 
 > generateError :: Environment ()
 > generateError = do
->   write "\n; define error"
+>   write "\n\n; define error"
 >   label "error"
 >   printText "The code threw a runtime error: "
 >   typeFrame $ GramListType undefined $ GramBasicType undefined CharType
->   write "lds -2\nldc 10 ; newline\ntrap 1\nbsr print\nhalt"
+>   write "lds -2\nbsr print\nldc 10 ; character '\\n'\ntrap 1\nhalt"
 
 
 Standard library handlers
@@ -504,7 +504,7 @@ Standard library handlers
 >   let und = undefined
 >   let types = [Nothing, Just $ GramBasicType und CharType, Just $ GramBasicType und IntType, Just $ GramBasicType und BoolType, 
 >                Just $ GramListType und und, Just $ GramTupleType und und und]
->   write $ "\n; define polymorphic " ++ s
+>   write $ "\n\n; define polymorphic " ++ s
 >   mapM_ f types
 
 
@@ -512,18 +512,18 @@ Exception handlers
 
 > runTimeException :: String -> String -> Environment ()
 > runTimeException lab s = do
->   write $ "; " ++ s
+>   write $ "\n\n; Runtime exception: " ++ s
 >   label lab
 >   printChar '\n'
 >   printText $ "A runtime exception occurred: " ++ s
 >   printChar '\n'
->   write "halt\n"
+>   write "halt"
 
 > printText :: String -> Environment ()
 > printText = mapM_ printChar
 
 > printChar :: Char -> Environment ()
-> printChar c = write $ "ldc " ++ show (ord c) ++ "; " ++ [c] ++ "\ntrap 1"
+> printChar c = write $ "ldc " ++ show (ord c) ++ " ; character " ++ show c ++ "\ntrap 1"
 
 
 Post-processing
@@ -533,13 +533,17 @@ Post-processing
 
 > fixDoubleLabels :: Code -> Code -- removes faulty situations such as: "fi_6: while_7: statement"
 > fixDoubleLabels code = 
->   let fixes = map (findDoubleLabels . words) $ lines code in
->   let substitute = applySub $ foldr (++) [] $ map snd fixes in
->   unlines $ map (substitute . unwords . fst) fixes
+>   let (lns, subs) = unzip $ map (findDoubleLabels . words) $ lines code in
+>   let substitute = applySub $ concat subs in
+>   unlines $ map (substitute . unwords) lns
 >   where findDoubleLabels wrds
 >           | length wrds > 2 && last (head wrds) == ':' && last (head $ tail wrds) == ':' = 
->               (tail wrds, [(init $ head wrds, init $ head $ tail wrds)])
+>               let (newwrds, [(from, to)]) = (tail wrds, [(init $ head wrds, init $ head $ tail wrds)]) in
+>               let (finalwrds, othersubs) = findDoubleLabels newwrds in
+>               (finalwrds, (from, subbedLabel to othersubs) : othersubs)
 >           | otherwise = (wrds, [])
+>         subbedLabel to [] = to
+>         subbedLabel _ othersubs = snd $ last othersubs
 >         applySub subs ln
 >           | any (\i -> isPrefixOf i ln) subbedInstructions = 
 >             case lookup (drop 4 ln) subs of
@@ -548,12 +552,16 @@ Post-processing
 >           | otherwise = ln
 >         subbedInstructions = ["bra ", "brf ", "brt ", "bsr ", "ldc "]
 
-> fixEmptyLabels :: Code -> Code -- removes situations such as "fi_6: fi_7:" when returning from nested if
-> fixEmptyLabels code = unlines $ map fixLine $ lines code
->   where fixLine ln
->           | length ln >= 2 && hasJustLabels ln = ln ++ "nop"
->           | otherwise = ln
->         hasJustLabels ln = all (\w -> last w == ':') $ words ln
+> fixEmptyLabels :: Code -> Code -- removes errors coming from non-void functions ending in stray labels "fi_6:", e.g. when returning within if statement
+> fixEmptyLabels code =
+>   let (lns, emptyLabels) = unzip $ map getEmptyLabel $ lines code in
+>   unlines $ filter (not . containsLabels (concat emptyLabels)) $ concat lns
+>   where hasJustLabels ln = all (\w -> last w == ':') $ words ln
+>         getEmptyLabel ln
+>           | length ln >= 2 && hasJustLabels ln = ([], map init $ words ln)
+>           | otherwise = ([ln], [])
+>         containsLabels labs ln = elem ln $ concat $ map subbedInstructions labs
+>         subbedInstructions lab = map (++lab) ["bra ", "brf ", "brt ", "bsr ", "ldc "]
 
 > fixHeapFunctionCalls :: Code -> Code                                                            -- a function pointer is a tuple (code address, environment).
 > fixHeapFunctionCalls load = let lns = lines load in init $ unlines $ fixHeapFunctionCalls' lns  -- we need this for function variables, but for global functions
@@ -619,9 +627,9 @@ Variable handlers
 > addVar :: Id -> Environment ()
 > addVar id = do
 >   (((d,v):ss), i) <- get
->   let loadIns = "ldl " ++ show d ++ " ; " ++ id
->       storeIns = "stl " ++ show d ++ " ; " ++ id
->       addressIns = "ldla " ++ show d ++ " ; " ++ id
+>   let loadIns = "ldl " ++ show d ++ " ; variable " ++ id
+>       storeIns = "stl " ++ show d ++ " ; variable " ++ id
+>       addressIns = "ldla " ++ show d ++ " ; variable " ++ id
 >   put ((d+1,(id, (loadIns, storeIns, addressIns)):v):ss, i)
 
 > addGlobal :: Id -> Environment ()
@@ -635,7 +643,7 @@ Variable handlers
 > addGlobalFunc :: Id -> Environment ()
 > addGlobalFunc id = do
 >   (((d,v):ss), i) <- get
->   let loadIns = "ldc " ++ id ++ "\nldc 0\nstmh 2"
+>   let loadIns = "ldc " ++ id ++ "\nldc 0 ; null environment\nstmh 2"
 >       storeIns = "bra __exc_unknown_error"
 >       addressIns = "bra __exc_unknown_error"
 >   put ((d,(id, (loadIns, storeIns, addressIns)):v):ss, i)
@@ -643,9 +651,9 @@ Variable handlers
 > addArg :: Id -> Integer -> Environment ()
 > addArg varId id = do
 >   (((d,v):ss), i) <- get
->   let loadIns = "ldl " ++ show id ++ " ; " ++ varId
->       storeIns = "stl " ++ show id ++ " ; " ++ varId
->       addressIns = "ldla " ++ show id ++ " ; " ++ varId
+>   let loadIns = "ldl " ++ show id ++ " ; argument " ++ varId
+>       storeIns = "stl " ++ show id ++ " ; argument " ++ varId
+>       addressIns = "ldla " ++ show id ++ " ; argument " ++ varId
 >   put ((d,(varId, (loadIns, storeIns, addressIns)):v):ss, i)
 
 > lookupVar :: Id -> Environment (Code, Code, Code)
@@ -698,7 +706,7 @@ Capture and environment handlers
 
 > functionEnvironment :: [Capture] -> GramId -> Environment ()
 > functionEnvironment capts id = let capt = getCapture capts id in functionEnvironment' capt
->   where functionEnvironment' (Capture _ [] _) = write "ldc 0"
+>   where functionEnvironment' (Capture _ [] _) = write "ldc 0 ; null environment"
 >         functionEnvironment' (Capture _ captured _) = functionEnvironment'' captured
 >         functionEnvironment'' [Id _ vid] = do
 >           (_,_,addr) <- lookupVar vid
