@@ -30,7 +30,7 @@ Once implemented, generate = run generateProgram
 > generate :: [Capture] -> Gram -> Either CompilationError Code
 > generate capts g
 >   | hasMain g = pure $ postprocess $ run (generateProgram capts) g
->   | otherwise = Left $ CompilationError CodeGeneration ("Program doesn't contain a function main()") undefined
+>   | otherwise = Left $ CompilationError CodeGeneration ("Program doesn't contain a void-returning function main()") undefined
 
 > generateProgram :: [Capture] -> Gram -> Environment ()
 > generateProgram capts g = do 
@@ -165,8 +165,8 @@ Once implemented, generate = run generateProgram
 >   popScope
 >   label labelFi
 >   return $ trlams ++ falams
-> generateStmt capt (GramReturn _ (Nothing)) = do
->   write "unlink\nret"
+> generateStmt (Capture (Id _ funId) _ _) (GramReturn _ (Nothing)) = do
+>   if funId == "main" then write "halt" else write "unlink\nret"
 >   return []
 > generateStmt capt (GramReturn _ (Just expr)) = do
 >   generateExpr expr
