@@ -596,9 +596,9 @@ Post-processing
 > addressesByInst s = length (words (takeWhile (/= ';') s))
 
 > replaceGlobal :: Code -> String -> Int -> Code
-> replaceGlobal code global address = replace ("$_" ++ global) lodadGlobal code
+> replaceGlobal code global address = replace ("$_" ++ global) loadGlobal code
 >   where
->     lodadGlobal = "ldc " ++ show address ++ " ; load global " ++ global
+>     loadGlobal = "ldc " ++ show address ++ " ; load global " ++ global
 
 Scope handlers
 
