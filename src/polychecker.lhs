@@ -709,11 +709,11 @@ A description of (mutual) deep skolemisation can be found in [1].
 > unification _ TInt TInt    = Right []
 > unification _ TBool TBool  = Right []
 > unification p (TVar i) t
->   | t == (TVar i)      = Right []
+>   | t == (TVar i)          = Right []
 >   | occurs i t             = Left $ CompilationError TypeChecker "Recursive type detected" p
 >   | otherwise              = Right [(i, t)]
 > unification p t (TVar i)
->   | t == (TVar i)      = Right []
+>   | t == (TVar i)          = Right []
 >   | occurs i t             = Left $ CompilationError TypeChecker "Recursive type detected" p
 >   | otherwise              = Right [(i, t)]
 > unification p (TSkolem i) t
@@ -737,8 +737,9 @@ A description of (mutual) deep skolemisation can be found in [1].
 > occurs :: VId -> Monotype -> Bool
 > occurs i (TTuple ta tb)          = (occurs i ta) || (occurs i tb) -- implements occurs check
 > occurs i (TList t)               = occurs i t
-> occurs i (TFunc [] tb)           = (occurs i tb)
-> occurs i (TFunc (ta1:ta1s) tb)   = (occurs i ta1) || (occurs i (TFunc ta1s tb))
+> occurs i (TForAll _ t)           = occurs i t
+> occurs i (TFunc [] tb)           = occurs i tb
+> occurs i (TFunc (ta1:ta1s) tb)   = (occurs i ta1) || (occurs i $ TFunc ta1s tb)
 > occurs i (TVar j)                = i == j
 > occurs _ _ = False
 
