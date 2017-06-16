@@ -497,6 +497,7 @@ Standard library handlers
 >    runTimeException "__exc_unknown_type_frame_print" "functions cannot be printed or displayed",
 >    runTimeException "__exc_unknown_type_frame_eq" "equality is not defined for functions",
 >    runTimeException "__exc_display" "display can only be used for characters and character lists",
+>    runTimeException "__exc_glob_fun_assignment" "global functions cannot be overwritten",
 >    runTimeException "__exc_unknown_error" "an unknown error occurred"]
 
 > polyBuildIn :: String -> (Maybe GramType -> Environment ()) -> Environment ()
@@ -644,8 +645,8 @@ Variable handlers
 > addGlobalFunc id = do
 >   (((d,v):ss), i) <- get
 >   let loadIns = "ldc " ++ id ++ "\nldc 0 ; null environment\nstmh 2"
->       storeIns = "bra __exc_unknown_error"
->       addressIns = "bra __exc_unknown_error"
+>       storeIns = "bra __exc_glob_fun_assignment"
+>       addressIns = "bra __exc_glob_fun_assignment"
 >   put ((d,(id, (loadIns, storeIns, addressIns)):v):ss, i)
 
 > addArg :: Id -> Integer -> Environment ()
