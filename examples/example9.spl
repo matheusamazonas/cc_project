@@ -1,4 +1,0 @@
-// make a copy of a tuple with swapped elements
-swapCopy ( pair ) :: (a, b) -> (b, a) {
-	return ( pair. snd, pair.fst );
-}

@@ -1,9 +1,0 @@
-// list append
-append ( l1 , l2 ) :: [t] [t] -> [t] {
-	if ( isEmpty ( l1 ) ) {
-		return l2 ;
-	} else {
-		l1.tl = append ( l1.tl, l2 );
-		return l1;
-	}
-}

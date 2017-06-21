@@ -1,8 +1,0 @@
-// Generates a list of integers from the first to the last argument
-fromTo ( from, to ) :: Int Int -> [ Int ] {
-	if ( from <= to ) {
-		return from : fromTo ( from + 1, to );
-	} else {
-		return [] ;
-	}
-}
